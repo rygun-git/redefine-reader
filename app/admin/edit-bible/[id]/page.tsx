@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
-import { Loader2, Save, ArrowLeft } from "lucide-react"
+import { Loader2, Save, ArrowLeft, LinkIcon, Check, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getFontsForLanguage } from "@/lib/fonts"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface EditBibleProps {
   params: {
@@ -29,6 +30,7 @@ export default function EditBiblePage({ params }: EditBibleProps) {
     language: "english",
     description: "",
     default_font: "",
+    file_url: "",
   })
 
   const [loading, setLoading] = useState(true)
@@ -36,6 +38,9 @@ export default function EditBiblePage({ params }: EditBibleProps) {
   const [availableFonts, setAvailableFonts] = useState<{ id: string; name: string; cssName: string }[]>([])
   const [previewText, setPreviewText] = useState("Sample text for font preview")
   const [selectedFontCss, setSelectedFontCss] = useState("")
+  const [validatingUrl, setValidatingUrl] = useState(false)
+  const [urlValidated, setUrlValidated] = useState(false)
+  const [urlError, setUrlError] = useState<string | null>(null)
 
   // Fetch Bible details
   useEffect(() => {
@@ -44,7 +49,7 @@ export default function EditBiblePage({ params }: EditBibleProps) {
         setLoading(true)
         const { data, error } = await supabase
           .from("bible_versions")
-          .select("title, language, description, default_font")
+          .select("title, language, description, default_font, file_url")
           .eq("id", id)
           .single()
 
@@ -56,7 +61,13 @@ export default function EditBiblePage({ params }: EditBibleProps) {
             language: data.language || "english",
             description: data.description || "",
             default_font: data.default_font || "",
+            file_url: data.file_url || "",
           })
+
+          // If there's a file URL, mark it as validated
+          if (data.file_url) {
+            setUrlValidated(true)
+          }
 
           // Load fonts for this language
           loadFontsForLanguage(data.language || "english")
@@ -167,10 +178,61 @@ export default function EditBiblePage({ params }: EditBibleProps) {
     }
   }
 
+  // Validate file URL
+  const validateFileUrl = async () => {
+    if (!bible.file_url.trim()) {
+      setUrlError("Please enter a valid URL")
+      return
+    }
+
+    if (!bible.file_url.endsWith(".txt")) {
+      setUrlError("The URL must point to a .txt file")
+      return
+    }
+
+    setValidatingUrl(true)
+    setUrlError(null)
+
+    try {
+      const response = await fetch(bible.file_url)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`)
+      }
+
+      const content = await response.text()
+
+      if (!content || content.trim().length === 0) {
+        throw new Error("The file is empty")
+      }
+
+      setUrlValidated(true)
+      toast({
+        title: "URL Validated",
+        description: "The file URL is valid and accessible.",
+      })
+    } catch (err) {
+      console.error("Error validating URL:", err)
+      setUrlError(`Error validating URL: ${err instanceof Error ? err.message : String(err)}`)
+      setUrlValidated(false)
+    } finally {
+      setValidatingUrl(false)
+    }
+  }
+
   // Save Bible changes
   const saveBible = async () => {
     try {
       setSaving(true)
+
+      // Validate URL if provided and not already validated
+      if (bible.file_url && !urlValidated) {
+        await validateFileUrl()
+        if (!urlValidated) {
+          setSaving(false)
+          return
+        }
+      }
 
       const { error } = await supabase
         .from("bible_versions")
@@ -179,6 +241,7 @@ export default function EditBiblePage({ params }: EditBibleProps) {
           language: bible.language,
           description: bible.description,
           default_font: bible.default_font || null,
+          file_url: bible.file_url || null,
         })
         .eq("id", id)
 
@@ -256,13 +319,62 @@ export default function EditBiblePage({ params }: EditBibleProps) {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="file-url">Bible File URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="file-url"
+                  type="url"
+                  value={bible.file_url}
+                  onChange={(e) => {
+                    setBible({ ...bible, file_url: e.target.value })
+                    setUrlValidated(false)
+                  }}
+                  placeholder="https://example.com/bible.txt"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={validateFileUrl}
+                  disabled={validatingUrl || !bible.file_url.trim()}
+                >
+                  {validatingUrl ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Validating
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="mr-2 h-4 w-4" /> Validate
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Provide a direct URL to a .txt file containing the Bible text. The file should have one verse per line.
+              </p>
+
+              {urlValidated && (
+                <Alert className="mt-2">
+                  <Check className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-600">URL validated successfully!</AlertDescription>
+                </Alert>
+              )}
+
+              {urlError && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{urlError}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="default-font">Default Font</Label>
               <Select value={bible.default_font} onValueChange={handleFontChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a default font" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No default font</SelectItem>
+                  <SelectItem value="none">No default font</SelectItem>
                   {availableFonts.map((font) => (
                     <SelectItem key={font.id} value={font.id}>
                       {font.name}

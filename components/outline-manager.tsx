@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Download, Plus, Trash2 } from "lucide-react"
+import { Download, Plus, Trash2, ExternalLink, FileJson } from "lucide-react"
 import Link from "next/link"
 
 // Default outline template - now using the chapters format for database compatibility
@@ -84,6 +84,9 @@ interface BibleOutline {
       title: string
     }[]
   }[]
+  ignoreCMTag?: boolean
+  new_format_data?: string
+  file_url?: string | null
   created_at: string
 }
 
@@ -92,6 +95,7 @@ export function OutlineManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleteLoading, setDeleteLoading] = useState<number | null>(null)
+  const [urlFetchLoading, setUrlFetchLoading] = useState<number | null>(null)
 
   useEffect(() => {
     fetchOutlines()
@@ -144,6 +148,35 @@ export function OutlineManager() {
     }
   }
 
+  const handleFetchFromUrl = async (outline: BibleOutline) => {
+    if (!outline.file_url) return
+
+    setUrlFetchLoading(outline.id)
+    try {
+      const response = await fetch(outline.file_url)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from URL: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      // Download the fetched JSON
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2))
+      const downloadAnchorNode = document.createElement("a")
+      downloadAnchorNode.setAttribute("href", dataStr)
+      downloadAnchorNode.setAttribute("download", `${outline.title.replace(/\s+/g, "-").toLowerCase()}.json`)
+      document.body.appendChild(downloadAnchorNode)
+      downloadAnchorNode.click()
+      downloadAnchorNode.remove()
+    } catch (err) {
+      console.error("Error fetching from URL:", err)
+      setError(`Failed to fetch from URL: ${err.message || "Unknown error"}`)
+    } finally {
+      setUrlFetchLoading(null)
+    }
+  }
+
   // Count books in an outline
   const getBookCount = (outline: BibleOutline) => {
     // Extract unique book names
@@ -158,6 +191,17 @@ export function OutlineManager() {
     })
 
     return bookNames.size
+  }
+
+  // Format URL for display
+  const formatUrl = (url: string) => {
+    if (!url) return ""
+
+    // Truncate long URLs for display
+    if (url.length > 40) {
+      return url.substring(0, 37) + "..."
+    }
+    return url
   }
 
   return (
@@ -199,12 +243,47 @@ export function OutlineManager() {
             <Card key={outline.id} className="p-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <div>
-                  <h3 className="font-medium">{outline.title}</h3>
+                  <div className="flex items-center">
+                    <h3 className="font-medium">{outline.title}</h3>
+                    {outline.file_url && (
+                      <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
+                        URL Reference
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {getBookCount(outline)} books, {outline.chapters?.length || 0} chapters
                   </p>
+                  {outline.file_url && (
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center">
+                      <FileJson className="h-3 w-3 mr-1" />
+                      <span className="truncate max-w-[250px]">{formatUrl(outline.file_url)}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 self-end sm:self-auto">
+                  {outline.file_url && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-600"
+                      onClick={() => handleFetchFromUrl(outline)}
+                      disabled={urlFetchLoading === outline.id}
+                    >
+                      {urlFetchLoading === outline.id ? (
+                        <span className="animate-pulse">Fetching...</span>
+                      ) : (
+                        <>
+                          <ExternalLink className="h-4 w-4 mr-1" /> Fetch JSON
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <Link href={`/admin/edit-outline/${outline.id}`}>
+                    <Button variant="outline" size="sm">
+                      Edit
+                    </Button>
+                  </Link>
                   <Button
                     variant="ghost"
                     size="sm"

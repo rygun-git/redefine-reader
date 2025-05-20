@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft, Upload } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function UploadBiblePage() {
   const [title, setTitle] = useState("")
@@ -17,12 +19,16 @@ export default function UploadBiblePage() {
   const [description, setDescription] = useState("")
   const [defaultFont, setDefaultFont] = useState("")
   const [file, setFile] = useState<File | null>(null)
+  const [fileUrl, setFileUrl] = useState("")
+  const [uploadMethod, setUploadMethod] = useState<"file" | "url">("file")
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [infoContent, setInfoContent] = useState<string | null>(null)
   const [availableFonts, setAvailableFonts] = useState<any[]>([])
+  const [validatingUrl, setValidatingUrl] = useState(false)
+  const [urlValidated, setUrlValidated] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Load fonts when language changes
@@ -86,11 +92,81 @@ export default function UploadBiblePage() {
     }
   }
 
+  const validateFileUrl = async () => {
+    if (!fileUrl.trim()) {
+      setError("Please enter a valid URL")
+      return false
+    }
+
+    if (!fileUrl.endsWith(".txt")) {
+      setError("The URL must point to a .txt file")
+      return false
+    }
+
+    setValidatingUrl(true)
+    setError(null)
+
+    try {
+      const response = await fetch(fileUrl)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`)
+      }
+
+      const content = await response.text()
+
+      if (!content || content.trim().length === 0) {
+        throw new Error("The file is empty")
+      }
+
+      // Preview the content
+      setFileContent(content)
+
+      // Extract info content (everything past line 311103)
+      const lines = content.split("\n")
+      if (lines.length > 311103) {
+        const info = lines.slice(311103).join("\n")
+        setInfoContent(info)
+      } else {
+        setInfoContent(null)
+      }
+
+      setUrlValidated(true)
+      return true
+    } catch (err) {
+      console.error("Error validating URL:", err)
+      setError(`Error validating URL: ${err instanceof Error ? err.message : String(err)}`)
+      setUrlValidated(false)
+      return false
+    } finally {
+      setValidatingUrl(false)
+    }
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!file || !title || !language) {
-      setError("Please fill in all required fields and select a file")
+
+    if (!title || !language) {
+      setError("Please fill in all required fields")
       return
+    }
+
+    if (uploadMethod === "file" && !file) {
+      setError("Please select a file to upload")
+      return
+    }
+
+    if (uploadMethod === "url") {
+      if (!fileUrl.trim()) {
+        setError("Please enter a valid URL")
+        return
+      }
+
+      // Validate URL if not already validated
+      if (!urlValidated) {
+        const isValid = await validateFileUrl()
+        if (!isValid) return
+      }
     }
 
     setUploading(true)
@@ -98,57 +174,64 @@ export default function UploadBiblePage() {
     setSuccess(null)
 
     try {
-      // Read file content
-      const reader = new FileReader()
+      let mainContent = ""
+      let info = null
 
-      reader.onload = async (event) => {
-        const content = event.target?.result as string
+      if (uploadMethod === "file" && file) {
+        // Read file content
+        const reader = new FileReader()
+        const content = await new Promise<string>((resolve, reject) => {
+          reader.onload = (event) => resolve(event.target?.result as string)
+          reader.onerror = reject
+          reader.readAsText(file)
+        })
 
         // Split content into main content and info
         const lines = content.split("\n")
-        let mainContent = content
-        let info = null
 
         if (lines.length > 311103) {
           mainContent = lines.slice(0, 311103).join("\n")
           info = lines.slice(311103).join("\n")
-        }
-
-        // Insert into database
-        const { data, error } = await supabase
-          .from("bible_versions")
-          .insert([
-            {
-              title,
-              language,
-              description: description || null,
-              content: mainContent,
-              info: info || null,
-              default_font: defaultFont || null,
-            },
-          ])
-          .select()
-
-        if (error) {
-          throw error
-        }
-
-        setSuccess(`Bible "${title}" uploaded successfully!`)
-
-        // Reset form
-        setTitle("")
-        setLanguage("english")
-        setDescription("")
-        setDefaultFont("")
-        setFile(null)
-        setFileContent(null)
-        setInfoContent(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ""
+        } else {
+          mainContent = content
         }
       }
 
-      reader.readAsText(file)
+      // Insert into database
+      const { data, error } = await supabase
+        .from("bible_versions")
+        .insert([
+          {
+            title,
+            language,
+            description: description || null,
+            content: uploadMethod === "file" ? mainContent : null,
+            file_url: uploadMethod === "url" ? fileUrl : null,
+            info: info || null,
+            default_font: defaultFont || null,
+          },
+        ])
+        .select()
+
+      if (error) {
+        throw error
+      }
+
+      setSuccess(`Bible "${title}" uploaded successfully!`)
+
+      // Reset form
+      setTitle("")
+      setLanguage("english")
+      setDescription("")
+      setDefaultFont("")
+      setFile(null)
+      setFileUrl("")
+      setFileContent(null)
+      setInfoContent(null)
+      setUrlValidated(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     } catch (err: any) {
       console.error("Error uploading Bible:", err)
       setError(err.message || "Failed to upload Bible")
@@ -177,7 +260,7 @@ export default function UploadBiblePage() {
         <CardHeader>
           <CardTitle>Upload a New Bible Version</CardTitle>
           <CardDescription>
-            Upload a text file containing the Bible content. The file should be formatted with one verse per line.
+            Upload a Bible version by providing a text file or a direct URL to a text file.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -242,13 +325,66 @@ export default function UploadBiblePage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="file">Bible File *</Label>
-              <Input id="file" ref={fileInputRef} type="file" accept=".txt" onChange={handleFileChange} required />
-              <p className="text-sm text-muted-foreground">
-                Upload a text file with one verse per line. Everything past line 311103 will be stored as version info.
-              </p>
-            </div>
+            <Tabs value={uploadMethod} onValueChange={(value) => setUploadMethod(value as "file" | "url")}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="file">Upload File</TabsTrigger>
+                <TabsTrigger value="url">Provide URL</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="file" className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="file">Bible File *</Label>
+                  <Input
+                    id="file"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt"
+                    onChange={handleFileChange}
+                    required={uploadMethod === "file"}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Upload a text file with one verse per line. Everything past line 311103 will be stored as version
+                    info.
+                  </p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="url" className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="file-url">Bible File URL *</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="file-url"
+                      type="url"
+                      value={fileUrl}
+                      onChange={(e) => {
+                        setFileUrl(e.target.value)
+                        setUrlValidated(false)
+                      }}
+                      placeholder="https://example.com/bible.txt"
+                      required={uploadMethod === "url"}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={validateFileUrl}
+                      disabled={validatingUrl || !fileUrl.trim()}
+                    >
+                      {validatingUrl ? "Validating..." : "Validate"}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Provide a direct URL to a .txt file containing the Bible text. The file should have one verse per
+                    line.
+                  </p>
+                  {urlValidated && (
+                    <Alert className="mt-2">
+                      <AlertDescription className="text-green-600">URL validated successfully!</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
 
             {fileContent && (
               <div className="space-y-2 border p-4 rounded-md">

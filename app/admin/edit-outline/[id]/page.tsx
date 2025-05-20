@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { supabase } from "@/lib/supabase"
-import { ChevronLeft, Plus, Trash, Save } from "lucide-react"
+import { ChevronLeft, Plus, Trash, Save, ExternalLink } from "lucide-react"
 import Link from "next/link"
 
 interface Chapter {
@@ -33,6 +33,7 @@ interface BibleOutline {
   ignoreCMTag?: boolean
   categories?: string[]
   new_format_data?: string
+  file_url?: string | null
 }
 
 export default function EditOutlinePage({ params }: { params: { id: string } }) {
@@ -47,10 +48,14 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
   const [categories, setCategories] = useState<string[]>([])
   const [description, setDescription] = useState<string>("")
   const [newCategory, setNewCategory] = useState<string>("")
+  const [urlValidating, setUrlValidating] = useState(false)
+  const [urlValid, setUrlValid] = useState(false)
+  const [urlPreview, setUrlPreview] = useState<any>(null)
 
   useEffect(() => {
     const fetchOutline = async () => {
       try {
+        setLoading(true)
         const { data, error } = await supabase.from("bible_outlines").select("*").eq("id", params.id).single()
 
         if (error) throw error
@@ -98,6 +103,11 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
           setCategories(extractedCategories)
           setDescription(extractedDescription)
 
+          // Set URL validity if file_url exists
+          if (processedData.file_url) {
+            setUrlValid(true)
+          }
+
           // Extract unique book names
           const books = new Set<string>()
           processedData.chapters?.forEach((chapter: any) => {
@@ -142,6 +152,7 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
           chapters: outline.chapters,
           ignoreCMTag: outline.ignoreCMTag,
           new_format_data: JSON.stringify(newFormatData),
+          file_url: outline.file_url,
         })
         .eq("id", outline.id)
 
@@ -291,6 +302,194 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
     }
   }
 
+  const validateUrl = async () => {
+    if (!outline || !outline.file_url) {
+      setError("Please enter a URL")
+      return
+    }
+
+    setUrlValidating(true)
+    setUrlValid(false)
+    setUrlPreview(null)
+    setError(null)
+
+    try {
+      // Check if URL ends with .json
+      if (!outline.file_url.toLowerCase().endsWith(".json")) {
+        throw new Error("URL must point to a JSON file (.json)")
+      }
+
+      // Fetch the content from the URL
+      const response = await fetch(outline.file_url)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from URL: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      // Validate the JSON structure
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid JSON format")
+      }
+
+      // Set preview data for the original structure
+      setUrlPreview(data)
+
+      // Check if this is the nested format (categories -> books -> chapters)
+      const isNestedFormat = data.categories && Array.isArray(data.categories)
+
+      let processedChapters: Chapter[] = []
+
+      if (isNestedFormat) {
+        console.log("Detected nested format with categories and books")
+
+        // Extract chapters from the nested structure
+        data.categories.forEach((category: any) => {
+          if (category.books && Array.isArray(category.books)) {
+            category.books.forEach((book: any) => {
+              if (book.chapters && Array.isArray(book.chapters)) {
+                // Convert chapters to the expected format
+                const bookChapters = book.chapters.map((chapter: any) => {
+                  // Convert sections if they exist
+                  const sections =
+                    chapter.sections && Array.isArray(chapter.sections)
+                      ? chapter.sections.map((section: any) => ({
+                          title: section.title || `Section at line ${section.start_line}`,
+                          startLine: Number.parseInt(section.start_line, 10) || 1,
+                        }))
+                      : []
+
+                  return {
+                    number: chapter.chapter || 0,
+                    name: `${book.name} ${chapter.chapter}`,
+                    book: book.name,
+                    startLine: Number.parseInt(chapter.start_line, 10) || 1,
+                    endLine: Number.parseInt(chapter.end_line, 10) || 1000,
+                    sections: sections,
+                  }
+                })
+
+                processedChapters = [...processedChapters, ...bookChapters]
+              }
+            })
+          }
+        })
+
+        // Validate that we extracted some chapters
+        if (processedChapters.length === 0) {
+          throw new Error("No valid chapters found in the nested structure")
+        }
+      } else {
+        // Handle the original flat format
+        // Validate required fields for outline usage
+        if (!data.title) {
+          throw new Error("Missing required field: title")
+        }
+
+        // Validate chapters array
+        if (!data.chapters || !Array.isArray(data.chapters) || data.chapters.length === 0) {
+          throw new Error("Missing or invalid chapters array")
+        }
+
+        // Validate chapter structure
+        for (let i = 0; i < data.chapters.length; i++) {
+          const chapter = data.chapters[i]
+          if (!chapter.number && chapter.number !== 0) {
+            throw new Error(`Chapter at index ${i} is missing required field: number`)
+          }
+          if (!chapter.name) {
+            throw new Error(`Chapter at index ${i} is missing required field: name`)
+          }
+
+          // Validate sections if present
+          if (chapter.sections) {
+            if (!Array.isArray(chapter.sections)) {
+              throw new Error(`Chapter ${chapter.number}: sections must be an array`)
+            }
+
+            for (let j = 0; j < chapter.sections.length; j++) {
+              const section = chapter.sections[j]
+              if (!section.title) {
+                throw new Error(`Chapter ${chapter.number}, section at index ${j} is missing required field: title`)
+              }
+              if (section.startLine === undefined || section.startLine === null) {
+                throw new Error(`Chapter ${chapter.number}, section at index ${j} is missing required field: startLine`)
+              }
+            }
+          }
+        }
+
+        // Use the original chapters
+        processedChapters = data.chapters.map((chapter: any) => ({
+          number: chapter.number,
+          name: chapter.name,
+          book: chapter.book,
+          startLine: chapter.startLine || 1,
+          endLine: chapter.endLine,
+          sections: chapter.sections || [],
+        }))
+      }
+
+      setUrlValid(true)
+
+      // Ask if user wants to update the outline with the processed chapters
+      if (processedChapters.length > 0) {
+        if (confirm(`Do you want to update the outline with ${processedChapters.length} chapters from the URL?`)) {
+          // Update the outline with the processed chapters
+          setOutline((prev) => ({
+            ...prev!,
+            chapters: processedChapters,
+            title: data.title || prev!.title,
+          }))
+
+          // Extract unique book names
+          const books = new Set<string>()
+          processedChapters.forEach((chapter) => {
+            if (chapter.book) {
+              books.add(chapter.book)
+            } else if (chapter.name && chapter.name.includes(" - ")) {
+              const bookName = chapter.name.split(" - ")[0]
+              books.add(bookName)
+            }
+          })
+
+          setAvailableBooks(Array.from(books))
+          if (books.size > 0) {
+            setSelectedBook(Array.from(books)[0])
+          }
+
+          // Update categories if present in the data
+          if (data.categories) {
+            let extractedCategories: string[] = []
+
+            if (isNestedFormat) {
+              // Extract category names from the nested structure
+              extractedCategories = data.categories.map((cat: any) => cat.name || cat.id).filter(Boolean)
+            } else if (Array.isArray(data.categories)) {
+              extractedCategories = data.categories
+            }
+
+            if (extractedCategories.length > 0) {
+              setCategories(extractedCategories)
+            }
+          }
+
+          // Update description if present
+          if (data.description) {
+            setDescription(data.description)
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error validating URL:", err)
+      setError(`URL validation failed: ${err.message || "Unknown error"}`)
+      setUrlValid(false)
+    } finally {
+      setUrlValidating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -357,6 +556,7 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="chapters">Chapters</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="url">URL Reference</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -584,6 +784,81 @@ export default function EditOutlinePage({ params }: { params: { id: string } }) 
                     </div>
                   ))}
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="url">
+          <Card>
+            <CardHeader>
+              <CardTitle>URL Reference</CardTitle>
+              <CardDescription>Link to an external JSON file containing the outline structure</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="file-url">JSON File URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="file-url"
+                    type="url"
+                    placeholder="https://example.com/bible-outline.json"
+                    value={outline.file_url || ""}
+                    onChange={(e) => setOutline({ ...outline, file_url: e.target.value })}
+                    className={urlValid ? "border-green-500" : ""}
+                  />
+                  <Button onClick={validateUrl} disabled={urlValidating || !outline.file_url} variant="secondary">
+                    {urlValidating ? (
+                      <>
+                        <div className="mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        Validating...
+                      </>
+                    ) : (
+                      "Validate URL & Data"
+                    )}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Enter a URL to a JSON file containing the outline structure. The file will be fetched when needed.
+                </p>
+
+                {urlValid && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                    <div className="flex items-center text-green-700 mb-2">
+                      <div className="h-4 w-4 rounded-full bg-green-500 mr-2"></div>
+                      <span className="font-medium">URL and data structure validated successfully</span>
+                    </div>
+                    <p className="text-xs text-green-700 mt-1">
+                      Supports both flat and nested (categories → books → chapters) formats
+                    </p>
+                    {urlPreview && (
+                      <div className="text-sm">
+                        <p>
+                          <strong>Title:</strong> {urlPreview.title || "Not specified"}
+                        </p>
+                        {urlPreview.chapters && (
+                          <p>
+                            <strong>Chapters:</strong> {urlPreview.chapters.length}
+                          </p>
+                        )}
+                        <Button
+                          variant="link"
+                          className="p-0 h-auto text-green-700"
+                          onClick={() => window.open(outline.file_url || "", "_blank")}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View JSON file
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {error && (
+                  <div className="mt-4 p-3 bg-destructive/20 rounded-md">
+                    <p className="text-destructive">{error}</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

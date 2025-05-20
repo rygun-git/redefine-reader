@@ -4,10 +4,10 @@ import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { BibleReader } from "@/components/bible-reader"
 import { Skeleton } from "@/components/ui/skeleton"
-import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
 import Link from "next/link"
+import { useUrlResolver } from "@/hooks/useUrlResolver"
 
 export default function ReadViewPage() {
   const searchParams = useSearchParams()
@@ -19,64 +19,48 @@ export default function ReadViewPage() {
   const chapterParam = searchParams.get("chapter")
 
   const [loading, setLoading] = useState(true)
-  const [content, setContent] = useState("")
-  const [outline, setOutline] = useState(null)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Use the URL resolver hook
+  const { versionUrl, outlineUrl, loading: urlLoading, error: urlError } = useUrlResolver(versionParam, outlineParam)
 
   useEffect(() => {
     // Check if we have all required parameters
     if (!versionParam || !outlineParam) {
+      console.warn("Missing version or outline parameter", { versionParam, outlineParam })
       router.push("/read")
       return
     }
 
     if (!bookParam) {
+      console.warn("Missing book parameter", { versionParam, outlineParam })
       router.push(`/select/book?version=${versionParam}&outline=${outlineParam}`)
       return
     }
 
     if (!chapterParam) {
+      console.warn("Missing chapter parameter", { versionParam, outlineParam, bookParam })
       router.push(`/select/chapter?version=${versionParam}&outline=${outlineParam}&book=${bookParam}`)
       return
     }
 
-    // If we have all parameters, fetch the data
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-
-        // Fetch Bible version content
-        const { data: versionData, error: versionError } = await supabase
-          .from("bible_versions")
-          .select("content")
-          .eq("id", versionParam)
-          .single()
-
-        if (versionError) throw versionError
-
-        // Fetch outline
-        const { data: outlineData, error: outlineError } = await supabase
-          .from("bible_outlines")
-          .select("*")
-          .eq("id", outlineParam)
-          .single()
-
-        if (outlineError) throw outlineError
-
-        setContent(versionData.content)
-        setOutline(outlineData)
-      } catch (err) {
-        console.error("Error fetching data:", err)
-        setError(err.message || "Failed to load content")
-      } finally {
-        setLoading(false)
-      }
+    // Validate chapter
+    const chapter = Number(chapterParam)
+    if (isNaN(chapter) || chapter < 1) {
+      console.error("Invalid chapter parameter", { chapterParam })
+      setError(`Invalid chapter: ${chapterParam}`)
+      setLoading(false)
+      return
     }
 
-    fetchData()
-  }, [versionParam, outlineParam, bookParam, chapterParam, router])
+    // Wait for URL resolution to complete
+    if (!urlLoading) {
+      console.log("URL resolution complete:", { versionUrl, outlineUrl, urlError })
+      setLoading(false)
+    }
+  }, [versionParam, outlineParam, bookParam, chapterParam, router, urlLoading, urlError, versionUrl, outlineUrl])
 
-  if (loading) {
+  if (loading || urlLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
@@ -97,7 +81,7 @@ export default function ReadViewPage() {
     )
   }
 
-  if (error) {
+  if (error || urlError) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
@@ -108,10 +92,28 @@ export default function ReadViewPage() {
             </Button>
           </Link>
         </div>
-        <div className="text-destructive">{error}</div>
+        <div className="space-y-4">
+          <div className="text-destructive">{error || urlError}</div>
+          <div className="text-sm text-muted-foreground">
+            <p>Debug information:</p>
+            <ul className="list-disc pl-5 mt-2">
+              <li>Version ID: {versionParam || "Not provided"}</li>
+              <li>Outline ID: {outlineParam || "Not provided"}</li>
+              <li>Book: {bookParam || "Not provided"}</li>
+              <li>Chapter: {chapterParam || "Not provided"}</li>
+            </ul>
+          </div>
+          <Button onClick={() => window.location.reload()} variant="outline" size="sm">
+            Retry
+          </Button>
+        </div>
       </div>
     )
   }
+
+  // Fallback URLs in case the resolver fails
+  const fallbackVersionUrl = "https://www.llvbible.com/LLV_352.txt"
+  const fallbackOutlineUrl = "https://www.llvbible.com/v11_bible_outline.json"
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -131,9 +133,13 @@ export default function ReadViewPage() {
         </Link>
       </div>
 
-      {content && outline && (
-        <BibleReader versionId={versionParam} outlineId={outlineParam} content={content} bibleOutline={outline} />
-      )}
+      {/* Use resolved URLs if available, otherwise fall back to hardcoded URLs */}
+      <BibleReader
+        versionUrl={versionUrl || fallbackVersionUrl}
+        outlineUrl={outlineUrl || fallbackOutlineUrl}
+        book={bookParam}
+        chapter={Number(chapterParam)}
+      />
     </div>
   )
 }

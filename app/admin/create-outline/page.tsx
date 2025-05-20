@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { supabase } from "@/lib/supabase"
-import { ChevronLeft, Plus, Trash, Save } from "lucide-react"
+import { ChevronLeft, Plus, Trash, Save, LinkIcon, FileText, ExternalLink } from "lucide-react"
 import Link from "next/link"
 
 interface Chapter {
@@ -34,6 +34,7 @@ interface BibleOutline {
   ignoreCMTag?: boolean
   categories?: string[]
   new_format_data?: any
+  file_url?: string | null
 }
 
 export default function CreateOutlinePage() {
@@ -44,6 +45,7 @@ export default function CreateOutlinePage() {
     chapters: [],
     ignoreCMTag: true,
     categories: [],
+    file_url: null,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,10 +53,25 @@ export default function CreateOutlinePage() {
   const [selectedBook, setSelectedBook] = useState<string>("")
   const [newCategory, setNewCategory] = useState<string>("")
   const [jsonFile, setJsonFile] = useState<File | null>(null)
+  const [inputMethod, setInputMethod] = useState<"file" | "url">("file")
+  const [urlValidating, setUrlValidating] = useState(false)
+  const [urlValid, setUrlValid] = useState(false)
+  const [urlPreview, setUrlPreview] = useState<any>(null)
 
   const handleSave = async () => {
     if (!outline.title) {
       setError("Title is required")
+      return
+    }
+
+    // If using URL method, validate URL first
+    if (inputMethod === "url" && outline.file_url) {
+      if (!urlValid) {
+        setError("Please validate the URL first")
+        return
+      }
+    } else if (inputMethod === "file" && outline.chapters.length === 0 && !jsonFile) {
+      setError("Please upload a JSON file or add chapters manually")
       return
     }
 
@@ -72,6 +89,7 @@ export default function CreateOutlinePage() {
         chapters: outline.chapters,
         ignoreCMTag: outline.ignoreCMTag,
         new_format_data: JSON.stringify(newFormatData),
+        file_url: outline.file_url,
       }
 
       const { data, error } = await supabase.from("bible_outlines").insert([outlineToSave]).select()
@@ -306,6 +324,82 @@ export default function CreateOutlinePage() {
     }
   }
 
+  const validateUrl = async () => {
+    if (!outline.file_url) {
+      setError("Please enter a URL")
+      return
+    }
+
+    setUrlValidating(true)
+    setUrlValid(false)
+    setUrlPreview(null)
+    setError(null)
+
+    try {
+      // Check if URL ends with .json
+      if (!outline.file_url.toLowerCase().endsWith(".json")) {
+        throw new Error("URL must point to a JSON file (.json)")
+      }
+
+      // Fetch the content from the URL
+      const response = await fetch(outline.file_url)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from URL: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      // Validate the JSON structure
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid JSON format")
+      }
+
+      // Set preview data
+      setUrlPreview(data)
+      setUrlValid(true)
+
+      // If the JSON has a title, update the outline title
+      if (data.title && !outline.title) {
+        setOutline((prev) => ({
+          ...prev,
+          title: data.title,
+          description: data.description || prev.description,
+        }))
+      }
+
+      // Process chapters if available
+      if (data.chapters && Array.isArray(data.chapters) && data.chapters.length > 0) {
+        // Process chapters similar to file upload
+        const processedChapters: Chapter[] = data.chapters.map((chapter: any) => ({
+          number: chapter.number,
+          name: chapter.name,
+          book: chapter.book,
+          startLine: chapter.startLine || 1,
+          endLine: chapter.endLine,
+          sections: chapter.sections || [],
+        }))
+
+        // Update the outline with the processed chapters
+        setOutline((prev) => ({
+          ...prev,
+          chapters: processedChapters,
+        }))
+
+        // Set the selected book if available
+        if (processedChapters.length > 0 && processedChapters[0].book) {
+          setSelectedBook(processedChapters[0].book)
+        }
+      }
+    } catch (err) {
+      console.error("Error validating URL:", err)
+      setError(`URL validation failed: ${err.message || "Unknown error"}`)
+      setUrlValid(false)
+    } finally {
+      setUrlValidating(false)
+    }
+  }
+
   // Filter chapters for the selected book
   const chaptersForSelectedBook = outline.chapters.filter(
     (chapter) => chapter.book === selectedBook || (chapter.name && chapter.name.startsWith(selectedBook + " - ")),
@@ -346,16 +440,91 @@ export default function CreateOutlinePage() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Import Outline</CardTitle>
-          <CardDescription>Upload a JSON outline file</CardDescription>
+          <CardDescription>Upload a JSON outline file or provide a URL</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="json-file">JSON Outline File</Label>
-              <Input id="json-file" type="file" accept=".json" onChange={handleFileChange} />
-              <p className="text-sm text-muted-foreground">Upload a JSON file with the outline structure</p>
-            </div>
-          </div>
+          <Tabs value={inputMethod} onValueChange={(value) => setInputMethod(value as "file" | "url")}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="file" className="flex items-center">
+                <FileText className="h-4 w-4 mr-2" />
+                File Upload
+              </TabsTrigger>
+              <TabsTrigger value="url" className="flex items-center">
+                <LinkIcon className="h-4 w-4 mr-2" />
+                URL Reference
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="file">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="json-file">JSON Outline File</Label>
+                  <Input id="json-file" type="file" accept=".json" onChange={handleFileChange} />
+                  <p className="text-sm text-muted-foreground">Upload a JSON file with the outline structure</p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="url">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="file-url">JSON File URL</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="file-url"
+                      type="url"
+                      placeholder="https://example.com/bible-outline.json"
+                      value={outline.file_url || ""}
+                      onChange={(e) => setOutline({ ...outline, file_url: e.target.value })}
+                      className={urlValid ? "border-green-500" : ""}
+                    />
+                    <Button onClick={validateUrl} disabled={urlValidating || !outline.file_url} variant="secondary">
+                      {urlValidating ? (
+                        <>
+                          <div className="mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          Validating...
+                        </>
+                      ) : (
+                        "Validate URL"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Enter a URL to a JSON file containing the outline structure
+                  </p>
+
+                  {urlValid && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                      <div className="flex items-center text-green-700 mb-2">
+                        <div className="h-4 w-4 rounded-full bg-green-500 mr-2"></div>
+                        <span className="font-medium">URL validated successfully</span>
+                      </div>
+                      {urlPreview && (
+                        <div className="text-sm">
+                          <p>
+                            <strong>Title:</strong> {urlPreview.title || "Not specified"}
+                          </p>
+                          {urlPreview.chapters && (
+                            <p>
+                              <strong>Chapters:</strong> {urlPreview.chapters.length}
+                            </p>
+                          )}
+                          <Button
+                            variant="link"
+                            className="p-0 h-auto text-green-700"
+                            onClick={() => window.open(outline.file_url || "", "_blank")}
+                          >
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            View JSON file
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

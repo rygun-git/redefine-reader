@@ -1,19 +1,18 @@
 "use client"
 
 import type React from "react"
-
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Home, ChevronLeft, ListFilter, ChevronRight, Bookmark, BookmarkCheck } from "lucide-react"
+import { Home, ChevronLeft, ListFilter, ChevronRight, Bookmark, BookmarkCheck, RefreshCw } from "lucide-react"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { getAllBookmarks, addBookmark, deleteBookmark } from "@/lib/bookmarks"
+import { useUrlResolver } from "@/hooks/useUrlResolver"
 
 interface Section {
   startLine: number
@@ -34,7 +33,10 @@ interface BibleOutline {
   id: number
   title: string
   chapters: Chapter[]
+  file_url?: string | null
 }
+
+const outlineCache: Record<string, BibleOutline> = {}
 
 export default function ChapterSelectPage() {
   const router = useRouter()
@@ -43,147 +45,149 @@ export default function ChapterSelectPage() {
   const outlineParam = searchParams.get("outline")
   const bookParam = searchParams.get("book")
 
+  // Use the resolver hook instead of directly getting URL params
+  const { versionUrl, outlineUrl, loading: urlLoading, error: urlError } = useUrlResolver(versionParam, outlineParam)
+
   const [bibleOutline, setBibleOutline] = useState<BibleOutline | null>(null)
+  const [filteredChapters, setFilteredChapters] = useState<Chapter[]>([])
+  const [bookmarkedChapters, setBookmarkedChapters] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filteredChapters, setFilteredChapters] = useState<Chapter[]>([])
   const [showSections, setShowSections] = useState(true)
-  const [bookmarkedChapters, setBookmarkedChapters] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    const fetchBibleOutline = async () => {
-      try {
-        setLoading(true)
-        const { data, error } = await supabase
-          .from("bible_outlines")
-          .select("id, title, chapters")
-          .eq("id", outlineParam)
-          .single()
+  const loadOutline = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-        if (error) throw error
-
-        if (data) {
-          setBibleOutline(data)
-
-          // Filter chapters for the selected book
-          const chapters = data.chapters.filter(
-            (chapter) => chapter.book === bookParam || chapter.name?.startsWith(bookParam + " - "),
-          )
-
-          setFilteredChapters(chapters)
-        } else {
-          setError("Bible outline not found.")
-        }
-      } catch (err) {
-        console.error("Error fetching Bible outline:", err)
-        setError("Failed to load Bible outline")
-      } finally {
-        setLoading(false)
+      if (!outlineUrl || !bookParam) {
+        throw new Error("Missing outline URL or book param")
       }
-    }
 
-    fetchBibleOutline()
-  }, [outlineParam, bookParam])
+      // Use cache if available
+      if (outlineCache[outlineUrl]) {
+        const cached = outlineCache[outlineUrl]
+        setBibleOutline(cached)
+        const filtered = cached.chapters.filter(
+          (chapter) => chapter.book === bookParam || chapter.name?.startsWith(bookParam + " - "),
+        )
+        setFilteredChapters(filtered)
+        return
+      }
+
+      const res = await fetch(outlineUrl)
+      if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`)
+
+      const data = await res.json()
+
+      if (!Array.isArray(data.categories)) {
+        throw new Error("Invalid outline format")
+      }
+
+      let chapters: Chapter[] = []
+      data.categories.forEach((category: any) => {
+        category.books.forEach((book: any) => {
+          const chapterList = book.chapters.map((chapter: any, i: number) => ({
+            number: chapter.chapter || i + 1,
+            name: chapter.name || `${book.name} ${chapter.chapter}`,
+            book: book.name,
+            startLine: Number.parseInt(chapter.start_line) || undefined,
+            endLine: Number.parseInt(chapter.end_line) || undefined,
+            sections: chapter.sections?.map((section: any) => ({
+              title: section.title,
+              startLine: section.start_line,
+              endLine: section.end_line || undefined,
+            })),
+          }))
+          chapters = chapters.concat(chapterList)
+        })
+      })
+
+      const outline: BibleOutline = {
+        id: Number(outlineParam) || 0,
+        title: data.title || "Outline",
+        chapters,
+        file_url: outlineUrl,
+      }
+
+      outlineCache[outlineUrl] = outline
+      setBibleOutline(outline)
+
+      const filtered = chapters.filter(
+        (chapter) => chapter.book === bookParam || chapter.name?.startsWith(bookParam + " - "),
+      )
+      setFilteredChapters(filtered)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleChapterSelect = (chapterNumber: number) => {
-    router.push(`/read/view?version=${versionParam}&outline=${outlineParam}&book=${bookParam}&chapter=${chapterNumber}`)
+    const url = `/read/view?version=${versionParam}&outline=${outlineParam}&book=${bookParam}&chapter=${chapterNumber}`
+    router.push(url)
   }
 
   const loadBookmarks = async () => {
     try {
       const bookmarks = await getAllBookmarks()
-      const bookmarkedSet = new Set(bookmarks.map((bookmark) => `${bookmark.book}-${bookmark.chapter}`))
-      setBookmarkedChapters(bookmarkedSet)
-    } catch (error) {
-      console.error("Error loading bookmarks:", error)
+      setBookmarkedChapters(new Set(bookmarks.map((b) => `${b.book}-${b.chapter}`)))
+    } catch (err) {
+      console.error("Bookmark error:", err)
     }
   }
 
   const toggleBookmark = async (e: React.MouseEvent, chapter: Chapter) => {
-    e.stopPropagation() // Prevent navigation when clicking the bookmark icon
+    e.stopPropagation()
+    const key = `${bookParam}-${chapter.number}`
+    const isBookmarked = bookmarkedChapters.has(key)
 
-    const bookmarkKey = `${bookParam}-${chapter.number}`
-    const isBookmarked = bookmarkedChapters.has(bookmarkKey)
-
-
-  
     try {
       if (isBookmarked) {
-        // Find the bookmark ID to delete
-        const bookmarks = await getAllBookmarks()
-        const bookmarkToDelete = bookmarks.find((b) => b.book === bookParam && b.chapter === chapter.number)
-
-        if (bookmarkToDelete?.id) {
-          await deleteBookmark(bookmarkToDelete.id)
-
-          // Update state
-          const updatedBookmarks = new Set(bookmarkedChapters)
-          updatedBookmarks.delete(bookmarkKey)
-          setBookmarkedChapters(updatedBookmarks)
+        const all = await getAllBookmarks()
+        const target = all.find((b) => b.book === bookParam && b.chapter === chapter.number)
+        if (target?.id) {
+          await deleteBookmark(target.id)
+          const updated = new Set(bookmarkedChapters)
+          updated.delete(key)
+          setBookmarkedChapters(updated)
         }
       } else {
-        // Add new bookmark with sections from the chapter
-
-        console.log(chapter);
-
-function getSectionTitles(chapter) {
-  if (!chapter?.sections || chapter.sections.length === 0) {
-    return JSON.stringify([]);
-  }
-
-  const titles = chapter.sections
-    .map(section => ({
-      title: section.title || 'Untitled',
-      startLine: section.startLine || 0
-    }))
-    .sort((a, b) => a.startLine - b.startLine)
-    .map(section => section.title);
-
-  return JSON.stringify(titles);
-}
-
-    console.log(getSectionTitles(chapter));
-
-
-
+        const sectionTitles = chapter.sections?.map((s) => s.title) || []
         const newBookmark = {
           title: `${bookParam} ${chapter.number}`,
           book: bookParam || "",
           chapter: chapter.number,
           notes: "",
           createdAt: Date.now(),
-          metadata: 'test',
-          // Include the sections from the chapter as a single text string of titles
-  sections: getSectionTitles(chapter)
+          metadata: "test",
+          sections: JSON.stringify(sectionTitles),
         }
-
         await addBookmark(newBookmark)
-
-        // Update state
-        const updatedBookmarks = new Set(bookmarkedChapters)
-        updatedBookmarks.add(bookmarkKey)
-        setBookmarkedChapters(updatedBookmarks)
+        const updated = new Set(bookmarkedChapters)
+        updated.add(key)
+        setBookmarkedChapters(updated)
       }
-    } catch (error) {
-      console.error("Error toggling bookmark:", error)
+    } catch (err) {
+      console.error("Toggle bookmark error:", err)
     }
   }
+
+  const getFirstSectionTitle = (chapter: Chapter): string | null => {
+    if (!chapter.sections?.length) return null
+    return chapter.sections.reduce((prev, curr) => (prev.startLine < curr.startLine ? prev : curr)).title
+  }
+
+  useEffect(() => {
+    if (!urlLoading && !urlError) {
+      loadOutline()
+    }
+  }, [outlineUrl, bookParam, urlLoading, urlError])
 
   useEffect(() => {
     loadBookmarks()
   }, [])
-
-  // Function to get the first section title for a chapter
-  const getFirstSectionTitle = (chapter: Chapter): string | null => {
-    if (!chapter.sections || chapter.sections.length === 0) return null
-
-    // Find the section with the lowest startLine
-    const firstSection = chapter.sections.reduce((prev, current) =>
-      prev.startLine < current.startLine ? prev : current,
-    )
-
-    return firstSection.title
-  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -207,22 +211,36 @@ function getSectionTitles(chapter) {
         <Label htmlFor="show-sections" className="text-sm">
           <ListFilter className="h-4 w-4 inline mr-1" /> Show Sections
         </Label>
-        <Switch
-          id="show-sections"
-          checked={showSections}
-          onCheckedChange={setShowSections}
-          aria-label="Toggle section visibility"
-        />
+        <Switch id="show-sections" checked={showSections} onCheckedChange={setShowSections} />
       </div>
+
+      {urlLoading && (
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      )}
+
+      {urlError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>Failed to resolve URLs: {urlError}</AlertDescription>
+        </Alert>
+      )}
 
       {error && (
         <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="flex flex-col space-y-2">
+            <div>{error}</div>
+            <Button variant="outline" size="sm" onClick={loadOutline} className="self-start">
+              <RefreshCw className="h-4 w-4 mr-2" /> Retry
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
 
       {loading ? (
         <div className="space-y-4">
+          <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
         </div>
@@ -255,13 +273,11 @@ function getSectionTitles(chapter) {
                           <BookmarkCheck
                             className="h-5 w-5 text-primary mr-4 hover:text-primary/80"
                             onClick={(e) => toggleBookmark(e, chapter)}
-                            aria-label="Remove bookmark"
                           />
                         ) : (
                           <Bookmark
                             className="h-5 w-5 text-gray-400 mr-4 hover:text-primary"
                             onClick={(e) => toggleBookmark(e, chapter)}
-                            aria-label="Add bookmark"
                           />
                         )}
                         <ChevronRight className="h-5 w-5 text-gray-400" />

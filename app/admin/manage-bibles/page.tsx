@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ArrowLeft, Download, Edit, FileEdit, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Download, Edit, FileEdit, Trash2, Upload, LinkIcon } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
 interface BibleVersion {
@@ -15,6 +15,7 @@ interface BibleVersion {
   language: string
   description: string | null
   content?: string
+  file_url?: string | null
   created_at: string
 }
 
@@ -33,15 +34,15 @@ export default function ManageBiblesPage() {
     try {
       const { data, error } = await supabase
         .from("bible_versions")
-        .select("id, title, language, description, created_at")
+        .select("id, title, language, description, file_url, created_at")
         .order("created_at", { ascending: false })
 
       if (error) throw error
 
       setBibleVersions(data || [])
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching Bible versions:", err)
-      setError("Failed to load Bible versions")
+      setError(`Failed to load Bible versions: ${err.message || "Unknown error"}`)
     } finally {
       setLoading(false)
     }
@@ -69,18 +70,37 @@ export default function ManageBiblesPage() {
   const handleDownloadVersion = async (id: number) => {
     setDownloadLoading(id)
     try {
-      // Fetch the full content
-      const { data, error } = await supabase.from("bible_versions").select("title, content").eq("id", id).single()
+      // Get the version details
+      const { data: versionData, error: versionError } = await supabase
+        .from("bible_versions")
+        .select("title, content, file_url")
+        .eq("id", id)
+        .single()
 
-      if (error) throw error
-      if (!data || !data.content) throw new Error("No content found")
+      if (versionError) throw versionError
+
+      let content = ""
+
+      // If there's a file_url, fetch content from there
+      if (versionData.file_url) {
+        const response = await fetch(versionData.file_url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch from URL: ${response.status} ${response.statusText}`)
+        }
+        content = await response.text()
+      } else if (versionData.content) {
+        // Otherwise use the content from the database
+        content = versionData.content
+      } else {
+        throw new Error("No content available for this Bible version")
+      }
 
       // Create a blob and download link
-      const blob = new Blob([data.content], { type: "text/plain" })
+      const blob = new Blob([content], { type: "text/plain" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `${data.title.replace(/\s+/g, "_")}.txt`
+      a.download = `${versionData.title.replace(/\s+/g, "_")}.txt`
       document.body.appendChild(a)
       a.click()
 
@@ -91,7 +111,7 @@ export default function ManageBiblesPage() {
       }, 100)
     } catch (err) {
       console.error("Error downloading Bible version:", err)
-      setError("Failed to download Bible version")
+      setError(`Failed to download Bible version: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setDownloadLoading(null)
     }
@@ -148,11 +168,21 @@ export default function ManageBiblesPage() {
                 <Card key={version.id} className="p-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                     <div>
-                      <h3 className="font-medium">{version.title}</h3>
+                      <h3 className="font-medium">
+                        {version.title}
+                        {version.file_url && (
+                          <span className="ml-2 text-sm text-blue-500 inline-flex items-center">
+                            <LinkIcon className="h-3 w-3 mr-1" /> External URL
+                          </span>
+                        )}
+                      </h3>
                       <p className="text-sm text-muted-foreground">
                         {version.language} • Added on {new Date(version.created_at).toLocaleDateString()}
                       </p>
                       {version.description && <p className="text-sm mt-1">{version.description}</p>}
+                      {version.file_url && (
+                        <p className="text-xs text-muted-foreground mt-1 truncate max-w-md">URL: {version.file_url}</p>
+                      )}
                     </div>
                     <div className="flex gap-2 self-end sm:self-auto">
                       <Button

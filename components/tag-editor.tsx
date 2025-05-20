@@ -1,4 +1,5 @@
-"use client"
+{/* Depricated Module
+ "use client"
 
 import type React from "react"
 
@@ -626,3 +627,4 @@ export function TagEditor() {
     </div>
   )
 }
+*/}
