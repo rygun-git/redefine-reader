@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": ["/api/*", "/_next/*"],
+  "public-files": {
+    "/public/*": {
+      "cache": {
+        "max-age": 31536000,
+        "s-maxage": 31536000
+      }
+    }
+  }
+}

@@ -8,6 +8,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Preserve all files in the public folder during builds
+  distDir: 'dist',
+  assetPrefix: './',
+  // Prevent public directory from being cleaned during builds
+  cleanDistDir: false,
   eslint: {
     ignoreDuringBuilds: true,
   },
