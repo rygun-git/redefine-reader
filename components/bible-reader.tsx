@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ChevronLeft, ChevronRight, AlertTriangle, BookmarkPlus, BookOpen } from "lucide-react"
+import { ChevronLeft, ChevronRight, AlertTriangle, BookmarkPlus, BookOpen, Moon, Sun } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useSearchParams, useRouter } from "next/navigation"
 import { BookmarkDialog } from "@/components/bookmark-dialog"
@@ -528,6 +528,7 @@ export function BibleReader({
     paragraphSpacing: 16,
     showFootnotes: true,
     showFootnoteSection: true,
+    darkMode: false,
   })
   const contentRef = useRef<HTMLDivElement>(null)
   const [fontFamily, setFontFamily] = useState<string | null>(null)
@@ -563,8 +564,13 @@ export function BibleReader({
           showFootnotes: parsedSettings.showFootnotes !== undefined ? parsedSettings.showFootnotes : true,
           showFootnoteSection:
             parsedSettings.showFootnoteSection !== undefined ? parsedSettings.showFootnoteSection : true,
+          darkMode: parsedSettings.darkMode !== undefined ? parsedSettings.darkMode : false,
         }))
         setShowFootnotes(parsedSettings.showFootnotes !== undefined ? parsedSettings.showFootnotes : true)
+
+        // Apply theme from localStorage
+        const theme = parsedSettings.darkMode ? "dark" : "light"
+        document.documentElement.classList.toggle("dark", parsedSettings.darkMode)
       } catch (e) {
         console.error("Error parsing saved display settings:", e)
       }
@@ -609,6 +615,7 @@ export function BibleReader({
           propDisplaySettings.showFootnoteSection !== undefined
             ? propDisplaySettings.showFootnoteSection
             : prevSettings.showFootnoteSection,
+        darkMode: propDisplaySettings.darkMode !== undefined ? propDisplaySettings.darkMode : prevSettings.darkMode,
       }))
 
       if (propDisplaySettings.showFootnotes !== undefined) {
@@ -1066,6 +1073,35 @@ export function BibleReader({
     return htmlContent
   }
 
+  const toggleDarkMode = () => {
+    const newDarkMode = !displaySettings.darkMode
+    setDisplaySettings((prev) => ({
+      ...prev,
+      darkMode: newDarkMode,
+    }))
+
+    // Update theme
+    const theme = newDarkMode ? "dark" : "light"
+    document.documentElement.classList.toggle("dark", newDarkMode)
+
+    // Save to localStorage
+    try {
+      const savedSettings = localStorage.getItem("bibleReaderDisplaySettings")
+      if (savedSettings) {
+        const parsedSettings = JSON.parse(savedSettings)
+        localStorage.setItem(
+          "bibleReaderDisplaySettings",
+          JSON.stringify({
+            ...parsedSettings,
+            darkMode: newDarkMode,
+          }),
+        )
+      }
+    } catch (error) {
+      console.error("Error saving dark mode setting:", error)
+    }
+  }
+
   const processHtmlTags = (text: string): string => {
     let processedText = text
     if (!tagStyles || tagStyles.length === 0) {
@@ -1362,6 +1398,15 @@ export function BibleReader({
               title="View All Footnotes"
             >
               <BookOpen className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleDarkMode}
+              title={displaySettings.darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {displaySettings.darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
 
             <Dialog open={showFootnotesDialog} onOpenChange={setShowFootnotesDialog}>

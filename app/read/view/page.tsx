@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
 import Link from "next/link"
 import { useUrlResolver } from "@/hooks/useUrlResolver"
+import { useTheme } from "next-themes"
 
 export default function ReadViewPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { theme, setTheme } = useTheme()
 
   const versionParam = searchParams.get("version")
   const outlineParam = searchParams.get("outline")

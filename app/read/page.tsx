@@ -44,7 +44,6 @@ const HARDCODED_VERSIONS: BibleVersion[] = [
     title: "LLV 352",
     language: "English",
     description: "Lawful Literal Version, Accountable Brothers' Standard Version of 2019-2025",
-    file_url: "https://www.llvbible.com/LLV_352.txt",
   },
   {
     id: 1,
@@ -59,7 +58,6 @@ const HARDCODED_OUTLINES: BibleOutline[] = [
   {
     id: 11,
     title: "LLV, AD2025/V1",
-    file_url: "https://www.llvbible.com/v11_bible_outline.json",
   },
   {
     id: 1,

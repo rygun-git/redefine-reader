@@ -16,34 +16,23 @@ export function useUrlResolver(versionId: string | null, outlineId: string | nul
       }
 
       try {
-        // First try local files
+        // Initialize variables to store URLs
+        let newVersionUrl: string | null = null
+        let newOutlineUrl: string | null = null
+
+        // Resolve version URL if versionId is provided
         if (versionId) {
-          const localVersionUrl = `/bibles/${versionId}.txt`
-          setVersionUrl(localVersionUrl)
+          newVersionUrl = `https://llvbible.com/bibles/${versionId}.txt`
+          setVersionUrl(newVersionUrl)
         }
 
+        // Resolve outline URL if outlineId is provided
         if (outlineId) {
-          const localOutlineUrl = `/outlines/${outlineId}.json`
-          setOutlineUrl(localOutlineUrl)
+          newOutlineUrl = `https://llvbible.com/outlines/${outlineId}.json`
+          setOutlineUrl(newOutlineUrl)
         }
 
-        // Then check with the API as a fallback
-        const params = new URLSearchParams()
-        if (versionId) params.append("version", versionId)
-        if (outlineId) params.append("outline", outlineId)
-
-        const response = await fetch(`/api/resolve-urls?${params.toString()}`)
-
-        if (!response.ok) {
-          throw new Error(`Failed to resolve URLs: ${response.status} ${response.statusText}`)
-        }
-
-        const data = await response.json()
-
-        if (data.versionUrl) setVersionUrl(data.versionUrl)
-        if (data.outlineUrl) setOutlineUrl(data.outlineUrl)
-
-        console.log("URL resolution complete:", { versionUrl: data.versionUrl, outlineUrl: data.outlineUrl })
+        console.log("URL resolution complete:", { versionUrl: newVersionUrl, outlineUrl: newOutlineUrl })
         setLoading(false)
       } catch (err) {
         console.error("Error resolving URLs:", err)
