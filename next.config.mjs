@@ -14,6 +14,30 @@ const nextConfig = {
   // Fix assetPrefix to start with a leading slash
   assetPrefix: '/',
   
+  // Add headers for all requests
+  async headers() {
+    return [
+      {
+        // Apply these headers to all routes
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, OPTIONS, PUT, DELETE',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization',
+          },
+        ],
+      },
+    ]
+  },
+  
   eslint: {
     ignoreDuringBuilds: true,
   },
