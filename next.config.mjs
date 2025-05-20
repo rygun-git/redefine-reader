@@ -1,24 +1,28 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
-  // Configure for Cloudflare Pages
-  output: 'standalone',
-  // Ensure images work properly
-  images: {
-    unoptimized: true,
-  },
-  // Preserve all files in the public folder during builds
+  // Custom build directory
   distDir: 'dist',
-  assetPrefix: './',
-  // Prevent public directory from being cleaned during builds
+  
+  // Fix assetPrefix to start with a leading slash
+  assetPrefix: '/',
+  
+  // Prevent cleaning the output directory
   cleanDistDir: false,
+  
+  // Output as a static site
+  output: 'export',
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: true,
   },
-};
+  
+  // Configure image domains
+  images: {
+    domains: ['llvbible.com'],
+    unoptimized: true,
+  },
+}
 
-export default nextConfig;
+export default nextConfig
