@@ -112,8 +112,8 @@ export default function ReadViewPage() {
   }
 
   // Fallback URLs in case the resolver fails
-  const fallbackVersionUrl = "https://www.llvbible.com/LLV_352.txt"
-  const fallbackOutlineUrl = "https://www.llvbible.com/v11_bible_outline.json"
+  const fallbackVersionUrl = "/bibles/2.txt"
+  const fallbackOutlineUrl = "/outlines/11.json"
 
   return (
     <div className="container mx-auto px-4 py-8">

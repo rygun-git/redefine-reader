@@ -11,15 +11,31 @@ import { BookmarkDialog } from "@/components/bookmark-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { type TagStyle, loadTagStyles } from "@/lib/loadTagStyles"
 
-// Function to fetch Bible content from URL, limited to book's line range 
-const fetchBibleContentFromUrl = async (
-  url: string,
-  bookName: string | undefined,
-  outline: any
-): Promise<string> => {
+// Function to fetch Bible content from URL, limited to book's line range
+const fetchBibleContentFromUrl = async (url: string, bookName: string | undefined, outline: any): Promise<string> => {
   try {
-    if (!url || typeof url !== "string" || !url.startsWith("http")) {
+    if (!url || typeof url !== "string") {
       throw new Error(`Invalid URL provided for Bible content: ${url || "undefined"}`)
+    }
+
+    // Handle local file URLs
+    if (url.startsWith("/")) {
+      console.log("Fetching local Bible content:", url)
+      try {
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch local Bible content: ${response.status} ${response.statusText}`)
+        }
+        const text = await response.text()
+        if (!text.trim()) {
+          throw new Error("Empty content received from local URL")
+        }
+        console.log("Local Bible content fetched:", { length: text.length })
+        return text
+      } catch (localError) {
+        console.error("Error fetching local Bible content:", localError)
+        throw localError
+      }
     }
 
     if (!bookName || !outline || !outline.chapters || !Array.isArray(outline.chapters)) {
@@ -108,20 +124,139 @@ const fetchBibleContentFromUrl = async (
 // Function to fetch Bible outline from URL, filtering by book
 const fetchBibleOutlineFromUrl = async (url: string, bookName: string | undefined): Promise<any> => {
   try {
-    if (!url || typeof url !== "string" || !url.startsWith("http")) {
+    if (!url || typeof url !== "string") {
       throw new Error(`Invalid URL provided for Bible outline: ${url || "undefined"}`)
     }
 
-    console.log("Attempting to fetch Bible outline from:", url, { bookName })
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    })
+    // Handle local file URLs
+    if (url.startsWith("/")) {
+      console.log("Fetching local Bible outline:", url)
+      try {
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch local Bible outline: ${response.status} ${response.statusText}`)
+        }
+        const data = await response.json()
+        console.log("Local Bible outline fetched:", { title: data.title })
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Bible outline: ${response.status} ${response.statusText}`)
+        // Process the outline data
+        const transformedOutline = {
+          id: data.id || 0,
+          title: data.title || "Untitled Outline",
+          ignoreCMTag: data.ignoreCMTag || false,
+          chapters: [],
+        }
+
+        if (!bookName) {
+          console.warn("No bookName provided, returning empty chapters")
+          return transformedOutline
+        }
+
+        if (data.categories && Array.isArray(data.categories)) {
+          data.categories.forEach((category: any) => {
+            if (category.books && Array.isArray(category.books)) {
+              category.books.forEach((book: any) => {
+                if (
+                  book.name?.toLowerCase() === bookName.toLowerCase() ||
+                  book.book_id?.toLowerCase() === bookName.toLowerCase()
+                ) {
+                  if (book.chapters && Array.isArray(book.chapters)) {
+                    const bookChapters = book.chapters.map((chapter: any) => ({
+                      number: chapter.chapter || 0,
+                      name: `${book.name || book.book_id || "Unknown"} - Chapter ${chapter.chapter || "Unknown"}`,
+                      book: book.name || book.book_id || "Unknown",
+                      startLine: Number(chapter.start_line) || 0,
+                      endLine: Number(chapter.end_line) || 0,
+                      sections: chapter.sections
+                        ? chapter.sections.map((section: any) => ({
+                            startLine: Number(section.start_line) || 0,
+                            title: section.title || "Untitled Section",
+                          }))
+                        : [],
+                    }))
+                    transformedOutline.chapters.push(...bookChapters)
+                  }
+                }
+              })
+            }
+          })
+        } else if (data.chapters && Array.isArray(data.chapters)) {
+          transformedOutline.chapters = data.chapters
+            .filter(
+              (chapter: any) =>
+                chapter.book?.toLowerCase() === bookName.toLowerCase() ||
+                chapter.name?.toLowerCase().startsWith(bookName.toLowerCase() + " - "),
+            )
+            .map((chapter: any) => ({
+              number: chapter.number || chapter.chapter || 0,
+              name: chapter.name || `Chapter ${chapter.number || chapter.chapter || "Unknown"}`,
+              book: chapter.book || "Unknown",
+              startLine: Number(chapter.startLine || chapter.start_line) || 0,
+              endLine: Number(chapter.endLine || chapter.end_line) || 0,
+              sections: chapter.sections
+                ? chapter.sections.map((section: any) => ({
+                    startLine: Number(section.startLine || section.start_line) || 0,
+                    title: section.title || "Untitled Section",
+                  }))
+                : [],
+            }))
+        }
+
+        if (transformedOutline.chapters.length === 0) {
+          console.warn("No chapters found for book:", bookName)
+          throw new Error(`No chapters found for book: ${bookName}`)
+        }
+
+        return transformedOutline
+      } catch (localError) {
+        console.error("Error fetching local Bible outline:", localError)
+        throw localError
+      }
+    }
+
+    console.log("Attempting to fetch Bible outline from:", url, { bookName })
+    let response
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        // If the URL has www, try without it
+        if (url.includes("www.")) {
+          console.log("Trying alternative URL without www...")
+          const altUrl = url.replace("www.", "")
+          response = await fetch(altUrl, {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          })
+        }
+
+        // If still not ok, try with http instead of https
+        if (!response.ok && url.startsWith("https://")) {
+          console.log("Trying alternative URL with http...")
+          const altUrl = url.replace("https://", "http://")
+          response = await fetch(altUrl, {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          })
+        }
+
+        // If still not ok, throw error
+        if (!response.ok) {
+          throw new Error(`Failed to fetch Bible outline: ${response.status} ${response.statusText}`)
+        }
+      }
+    } catch (fetchError) {
+      console.error("Fetch error:", fetchError)
+      throw new Error(`Failed to fetch Bible outline: ${fetchError.message}`)
     }
 
     let data
@@ -187,7 +322,7 @@ const fetchBibleOutlineFromUrl = async (url: string, bookName: string | undefine
         .filter(
           (chapter: any) =>
             chapter.book?.toLowerCase() === bookName.toLowerCase() ||
-            chapter.name?.toLowerCase().startsWith(bookName.toLowerCase() + " - ")
+            chapter.name?.toLowerCase().startsWith(bookName.toLowerCase() + " - "),
         )
         .map((chapter: any) => ({
           number: chapter.number || chapter.chapter || 0,
@@ -545,7 +680,9 @@ export function BibleReader({
           })
         } catch (urlError) {
           console.error("Error fetching Bible outline from URL:", urlError)
-          setError(`Failed to load Bible outline from URL: ${urlError instanceof Error ? urlError.message : "Unknown error"}`)
+          setError(
+            `Failed to load Bible outline from URL: ${urlError instanceof Error ? urlError.message : "Unknown error"}`,
+          )
           setLoading(false)
           return
         }
@@ -559,7 +696,7 @@ export function BibleReader({
               chapters: outlineData.chapters.filter(
                 (chapter: any) =>
                   chapter.book?.toLowerCase() === urlParams.book.toLowerCase() ||
-                  chapter.name?.toLowerCase().startsWith(urlParams.book.toLowerCase() + " - ")
+                  chapter.name?.toLowerCase().startsWith(urlParams.book.toLowerCase() + " - "),
               ),
             }
           }
@@ -585,7 +722,9 @@ export function BibleReader({
           console.log("Content sample after fetch:", contentData.slice(0, 500))
         } catch (urlError) {
           console.error("Error fetching Bible content from URL:", urlError)
-          setError(`Failed to load Bible content from URL: ${urlError instanceof Error ? urlError.message : "Unknown error"}`)
+          setError(
+            `Failed to load Bible content from URL: ${urlError instanceof Error ? urlError.message : "Unknown error"}`,
+          )
           setLoading(false)
           return
         }
@@ -596,7 +735,10 @@ export function BibleReader({
       }
 
       if (contentData && outlineData) {
-        console.log("Processing content with outline:", { contentLength: contentData.length, outlineTitle: outlineData.title })
+        console.log("Processing content with outline:", {
+          contentLength: contentData.length,
+          outlineTitle: outlineData.title,
+        })
         processContent(contentData, outlineData, urlParams.book, urlParams.chapter, "fetchData")
         contentProcessed.current = true
       } else {
@@ -622,7 +764,7 @@ export function BibleReader({
     outline: any,
     bookName: string | undefined,
     chapterNum: number | undefined,
-    source: string
+    source: string,
   ) => {
     if (isProcessing.current) {
       console.log("Skipping processContent: Already processing", { source, bookName })
@@ -635,7 +777,10 @@ export function BibleReader({
       console.log(`Starting content processing (${source}):`, { contentLength: content.length, bookName, chapterNum })
 
       if (!content || !outline) {
-        console.error("Cannot process content: Missing data", { contentAvailable: !!content, outlineAvailable: !!outline })
+        console.error("Cannot process content: Missing data", {
+          contentAvailable: !!content,
+          outlineAvailable: !!outline,
+        })
         setError("Missing content or outline data")
         return
       }
@@ -646,11 +791,12 @@ export function BibleReader({
         return
       }
 
-      const minLine = Math.min(
-        ...outline.chapters
-          .filter((chapter: any) => chapter.startLine)
-          .map((chapter: any) => Number(chapter.startLine))
-      ) || 1
+      const minLine =
+        Math.min(
+          ...outline.chapters
+            .filter((chapter: any) => chapter.startLine)
+            .map((chapter: any) => Number(chapter.startLine)),
+        ) || 1
 
       const lines = content.split("\n")
       const verses: { text: string; lineNumber: number; verseNumber: number }[] = []
@@ -704,15 +850,13 @@ export function BibleReader({
           return
         }
 
-        const chapterVerses = verses.filter(
-          (verse) => verse.lineNumber >= startLine && verse.lineNumber <= endLine
-        )
+        const chapterVerses = verses.filter((verse) => verse.lineNumber >= startLine && verse.lineNumber <= endLine)
 
         console.log(`Chapter ${chapterNumber} verses:`, chapterVerses.length)
 
         if (chapterVerses.length > MAX_VERSES_PER_CHAPTER) {
           setContentWarning(
-            `Chapter ${chapterNumber} has ${chapterVerses.length} verses, exceeding limit of ${MAX_VERSES_PER_CHAPTER}.`
+            `Chapter ${chapterNumber} has ${chapterVerses.length} verses, exceeding limit of ${MAX_VERSES_PER_CHAPTER}.`,
           )
         }
 
@@ -720,7 +864,7 @@ export function BibleReader({
         if (chapter.sections && Array.isArray(chapter.sections)) {
           chapter.sections.forEach((section: any, sectionIndex: number) => {
             const sectionStartLine = (Number(section.startLine) || startLine) - minLine + 1
-            const sectionEndLine = section.endLine ? (Number(section.endLine) - minLine + 1) : endLine
+            const sectionEndLine = section.endLine ? Number(section.endLine) - minLine + 1 : endLine
 
             if (sectionStartLine > sectionEndLine || sectionStartLine < startLine || sectionEndLine > endLine) {
               console.warn("Invalid section bounds:", { sectionIndex, sectionStartLine, sectionEndLine })
@@ -728,7 +872,7 @@ export function BibleReader({
             }
 
             const sectionVerses = chapterVerses.filter(
-              (verse) => verse.lineNumber >= sectionStartLine && verse.lineNumber <= sectionEndLine
+              (verse) => verse.lineNumber >= sectionStartLine && verse.lineNumber <= sectionEndLine,
             )
 
             sections.push({
@@ -1047,7 +1191,7 @@ export function BibleReader({
     if (displaySettings.showLineNumbers && currentChapterData && !isInformationPage(currentChapterData.name)) {
       processedText = processedText.replace(
         /<span class="verse-number.*?<\/span>/,
-        (match) => `${match}<span class="text-blue-500 text-xs font-normal mr-2">[${verse.lineNumber}]</span>`
+        (match) => `${match}<span class="text-blue-500 text-xs font-normal mr-2">[${verse.lineNumber}]</span>`,
       )
     }
 
@@ -1075,7 +1219,7 @@ export function BibleReader({
         if (match.index !== undefined) {
           const footnoteContent = match[1]
           const footnote = footnotes.find(
-            (fn) => fn.verseNumber === verse.verseNumber && fn.content === footnoteContent
+            (fn) => fn.verseNumber === verse.verseNumber && fn.content === footnoteContent,
           )
           const footnoteNumber = footnote?.number || i + 1
           const footnoteId = footnote?.id || `fn-rf-${currentChapter}-${verse.verseNumber}-${i}`
@@ -1189,9 +1333,7 @@ export function BibleReader({
             >
               {chapters.map((chapter) => (
                 <option key={chapter.chapterNumber} value={chapter.chapterNumber}>
-                  {chapter.name.includes(" - ")
-                    ? chapter.name.split(" - ")[1]
-                    : `Chapter ${chapter.chapterNumber}`}
+                  {chapter.name.includes(" - ") ? chapter.name.split(" - ")[1] : `Chapter ${chapter.chapterNumber}`}
                 </option>
               ))}
             </select>
@@ -1304,7 +1446,7 @@ export function BibleReader({
               {isInformationPage(currentChapterData.name) ? (
                 <div
                   dangerouslySetInnerHTML={{
-                    __html: processInformationPageContent(currentChapterData.verses)
+                    __html: processInformationPageContent(currentChapterData.verses),
                   }}
                 />
               ) : (
