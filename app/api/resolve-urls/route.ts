@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -18,17 +19,19 @@ export async function GET(request: Request) {
     if (versionId) {
       const localVersionUrl = `https://llvbible.com/bibles/${versionId}.txt`
       versionUrl = localVersionUrl
+    }
 
     if (outlineId) {
       const localOutlineUrl = `https://llvbible.com/outlines/${outlineId}.json`
       outlineUrl = localOutlineUrl
+    }
 
-  Console.Log("BibleUrl",versionUrl)
-  Console.Log("OutlineUrl:",outlineUrl)
+    console.log("BibleUrl", versionUrl)
+    console.log("OutlineUrl:", outlineUrl)
 
     return NextResponse.json({ versionUrl, outlineUrl })
   } catch (error) {
     console.error("Error resolving URLs:", error)
-    return NextResponse.json({ error: "Failed to resolve ya URLs" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to resolve URLs" }, { status: 500 })
   }
 }
