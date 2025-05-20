@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClient } from "@supabase/supabase-js"
+import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -9,19 +9,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Download, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 
-// Initialize Supabase client
-const supabaseClient = createClient(
-  "https://rzynttoonxzglpyawbgz.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6eW50dG9vbnh6Z2xweWF3Ymd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMjk4ODYsImV4cCI6MjA2MTgwNTg4Nn0.Hfw3LODJUp7epk0QOWux9PZ134QB3jeh_VhDH7aUMh8",
-)
-
-// Default outline template
+// Default outline template - now using the chapters format for database compatibility
 const defaultOutline = {
   title: "Genesis Outline (Default Template)",
   chapters: [
     {
       number: 1,
-      name: "Genesis 1 - Creation",
+      name: "Genesis - Genesis 1 - Creation",
+      book: "Genesis",
       sections: [
         { startVerse: 1, endVerse: 5, title: "First Day: Light" },
         { startVerse: 6, endVerse: 8, title: "Second Day: Sky" },
@@ -33,7 +28,8 @@ const defaultOutline = {
     },
     {
       number: 2,
-      name: "Genesis 2 - Garden of Eden",
+      name: "Genesis - Genesis 2 - Garden of Eden",
+      book: "Genesis",
       sections: [
         { startVerse: 1, endVerse: 3, title: "Seventh Day: God Rests" },
         { startVerse: 4, endVerse: 14, title: "Creation of Man and the Garden" },
@@ -43,7 +39,8 @@ const defaultOutline = {
     },
     {
       number: 3,
-      name: "Genesis 3 - The Fall",
+      name: "Genesis - Genesis 3 - The Fall",
+      book: "Genesis",
       sections: [
         { startVerse: 1, endVerse: 7, title: "The Temptation" },
         { startVerse: 8, endVerse: 13, title: "God Confronts Adam and Eve" },
@@ -52,23 +49,23 @@ const defaultOutline = {
       ],
     },
     {
-      number: 4,
-      name: "Genesis 4 - Cain and Abel",
+      number: 1,
+      name: "Exodus - Exodus 1 - Israelites Oppressed",
+      book: "Exodus",
       sections: [
-        { startVerse: 1, endVerse: 8, title: "Cain Murders Abel" },
-        { startVerse: 9, endVerse: 16, title: "Cain's Punishment" },
-        { startVerse: 17, endVerse: 24, title: "Cain's Descendants" },
-        { startVerse: 25, endVerse: 26, title: "Seth and Enosh" },
+        { startVerse: 1, endVerse: 7, title: "Israel Multiplies in Egypt" },
+        { startVerse: 8, endVerse: 14, title: "New King Oppresses Israel" },
+        { startVerse: 15, endVerse: 22, title: "Pharaoh Orders Male Children Killed" },
       ],
     },
     {
-      number: 5,
-      name: "Genesis 5 - Adam's Descendants",
+      number: 2,
+      name: "Exodus - Exodus 2 - Birth of Moses",
+      book: "Exodus",
       sections: [
-        { startVerse: 1, endVerse: 5, title: "Adam" },
-        { startVerse: 6, endVerse: 20, title: "Seth to Jared" },
-        { startVerse: 21, endVerse: 24, title: "Enoch" },
-        { startVerse: 25, endVerse: 32, title: "Methuselah to Noah" },
+        { startVerse: 1, endVerse: 10, title: "Birth and Adoption of Moses" },
+        { startVerse: 11, endVerse: 15, title: "Moses Flees to Midian" },
+        { startVerse: 16, endVerse: 25, title: "Moses in Midian" },
       ],
     },
   ],
@@ -80,6 +77,7 @@ interface BibleOutline {
   chapters: {
     number: number
     name: string
+    book?: string
     sections?: {
       startVerse: number
       endVerse: number
@@ -101,7 +99,7 @@ export function OutlineManager() {
 
   const fetchOutlines = async () => {
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabase
         .from("bible_outlines")
         .select("*")
         .order("created_at", { ascending: false })
@@ -132,7 +130,7 @@ export function OutlineManager() {
 
     setDeleteLoading(id)
     try {
-      const { error } = await supabaseClient.from("bible_outlines").delete().eq("id", id)
+      const { error } = await supabase.from("bible_outlines").delete().eq("id", id)
 
       if (error) throw error
 
@@ -144,6 +142,22 @@ export function OutlineManager() {
     } finally {
       setDeleteLoading(null)
     }
+  }
+
+  // Count books in an outline
+  const getBookCount = (outline: BibleOutline) => {
+    // Extract unique book names
+    const bookNames = new Set<string>()
+    outline.chapters?.forEach((chapter) => {
+      if (chapter.book) {
+        bookNames.add(chapter.book)
+      } else if (chapter.name && chapter.name.includes(" - ")) {
+        const bookName = chapter.name.split(" - ")[0]
+        bookNames.add(bookName)
+      }
+    })
+
+    return bookNames.size
   }
 
   return (
@@ -187,7 +201,7 @@ export function OutlineManager() {
                 <div>
                   <h3 className="font-medium">{outline.title}</h3>
                   <p className="text-sm text-muted-foreground">
-                    {outline.chapters.length} chapters, created on {new Date(outline.created_at).toLocaleDateString()}
+                    {getBookCount(outline)} books, {outline.chapters?.length || 0} chapters
                   </p>
                 </div>
                 <div className="flex gap-2 self-end sm:self-auto">

@@ -1,21 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClient } from "@supabase/supabase-js"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { BibleReader } from "@/components/bible-reader"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ChevronLeft, ChevronRight, BookOpen, Home } from "lucide-react"
+import { Home, BookOpen, Database } from "lucide-react"
 import Link from "next/link"
-
-// Initialize Supabase client
-const supabaseClient = createClient(
-  "https://rzynttoonxzglpyawbgz.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6eW50dG9vbnh6Z2xweWF3Ymd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMjk4ODYsImV4cCI6MjA2MTgwNTg4Nn0.Hfw3LODJUp7epk0QOWux9PZ134QB3jeh_VhDH7aUMh8",
-)
+import { supabase } from "@/lib/supabase"
+import { getBibleContent, isIndexedDBAvailable, getDisplaySettings } from "@/lib/indexedDB"
+import { DisplaySettingsCard } from "@/components/display-settings-card"
 
 interface BibleVersion {
   id: number
@@ -23,6 +19,7 @@ interface BibleVersion {
   language: string
   description: string | null
   created_at: string
+  cached?: boolean
 }
 
 interface BibleOutline {
@@ -31,6 +28,7 @@ interface BibleOutline {
   chapters: {
     number: number
     name: string
+    book?: string
     sections?: {
       startVerse: number
       endVerse: number
@@ -40,29 +38,84 @@ interface BibleOutline {
 }
 
 export default function ReadPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const versionParam = searchParams.get("version")
+  const outlineParam = searchParams.get("outline")
+
   const [bibleVersions, setBibleVersions] = useState<BibleVersion[]>([])
   const [bibleOutlines, setBibleOutlines] = useState<BibleOutline[]>([])
-  const [selectedVersionId, setSelectedVersionId] = useState<string>("")
-  const [selectedOutlineId, setSelectedOutlineId] = useState<string>("")
-  const [bibleContent, setBibleContent] = useState<string>("")
+  const [selectedVersionId, setSelectedVersionId] = useState<string>(versionParam || "")
+  const [selectedOutlineId, setSelectedOutlineId] = useState<string>(outlineParam || "")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentChapter, setCurrentChapter] = useState(1)
+  const [indexedDBAvailable, setIndexedDBAvailable] = useState<boolean>(false)
+  const [checkingCache, setCheckingCache] = useState<boolean>(false)
 
   useEffect(() => {
-    // Fetch available Bible versions
+    // Check if IndexedDB is available
+    const checkIndexedDB = async () => {
+      const available = await isIndexedDBAvailable()
+      setIndexedDBAvailable(available)
+    }
+
+    checkIndexedDB()
+  }, [])
+
+  useEffect(() => {
+    // Fetch available Bible versions (metadata only, not content)
     const fetchBibleVersions = async () => {
       try {
-        const { data, error } = await supabaseClient
+        setLoading(true)
+        const { data, error } = await supabase
           .from("bible_versions")
-          .select("id, title, language, description, created_at")
+          .select("id, title, language, description, created_at") // Only select metadata, not content
           .order("created_at", { ascending: false })
 
         if (error) throw error
 
         if (data && data.length > 0) {
           setBibleVersions(data)
-          setSelectedVersionId(data[0].id.toString())
+
+          // Get user's default version from settings
+          const settings = await getDisplaySettings()
+          const defaultVersionId = settings?.defaultVersionId
+
+          // Set the selected version based on priority:
+          // 1. URL parameter if present
+          // 2. User's default version if set
+          // 3. First version in the list as fallback
+          if (versionParam) {
+            setSelectedVersionId(versionParam)
+          } else if (defaultVersionId) {
+            // Check if the default version exists in the available versions
+            const versionExists = data.some((v) => v.id.toString() === defaultVersionId.toString())
+            if (versionExists) {
+              setSelectedVersionId(defaultVersionId.toString())
+            } else {
+              setSelectedVersionId(data[0].id.toString())
+            }
+          } else {
+            setSelectedVersionId(data[0].id.toString())
+          }
+
+          // Check which versions are cached if IndexedDB is available
+          if (indexedDBAvailable) {
+            setCheckingCache(true)
+            const versionsWithCacheStatus = await Promise.all(
+              data.map(async (version) => {
+                try {
+                  const cachedContent = await getBibleContent(version.id)
+                  return { ...version, cached: !!cachedContent }
+                } catch (e) {
+                  console.error(`Error checking cache for version ${version.id}:`, e)
+                  return { ...version, cached: false }
+                }
+              }),
+            )
+            setBibleVersions(versionsWithCacheStatus)
+            setCheckingCache(false)
+          }
         } else {
           setError("No Bible versions found. Please upload one first.")
         }
@@ -74,19 +127,21 @@ export default function ReadPage() {
       }
     }
 
-    // Fetch available Bible outlines
+    // Fetch available Bible outlines (minimal data)
     const fetchBibleOutlines = async () => {
       try {
-        const { data, error } = await supabaseClient
+        const { data, error } = await supabase
           .from("bible_outlines")
-          .select("*")
+          .select("id, title, created_at") // Only select minimal data
           .order("created_at", { ascending: false })
 
         if (error) throw error
 
         if (data && data.length > 0) {
           setBibleOutlines(data)
-          setSelectedOutlineId(data[0].id.toString())
+          if (!outlineParam && data.length > 0) {
+            setSelectedOutlineId(data[0].id.toString())
+          }
         }
       } catch (err) {
         console.error("Error fetching Bible outlines:", err)
@@ -96,54 +151,15 @@ export default function ReadPage() {
 
     fetchBibleVersions()
     fetchBibleOutlines()
-  }, [])
+  }, [versionParam, outlineParam, indexedDBAvailable])
 
-  useEffect(() => {
-    // Fetch selected Bible content
-    const fetchBibleContent = async () => {
-      if (!selectedVersionId) return
-
-      setLoading(true)
-      try {
-        const { data, error } = await supabaseClient
-          .from("bible_versions")
-          .select("content")
-          .eq("id", selectedVersionId)
-          .single()
-
-        if (error) throw error
-
-        if (data && data.content) {
-          setBibleContent(data.content)
-        }
-      } catch (err) {
-        console.error("Error fetching Bible content:", err)
-        setError("Failed to load Bible content")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchBibleContent()
-  }, [selectedVersionId])
-
-  const handlePreviousChapter = () => {
-    if (currentChapter > 1) {
-      setCurrentChapter(currentChapter - 1)
+  const handleStartReading = () => {
+    if (selectedVersionId && selectedOutlineId) {
+      router.push(`/select/book?version=${selectedVersionId}&outline=${selectedOutlineId}`)
+    } else {
+      setError("Please select a Bible version and outline to continue")
     }
   }
-
-  const handleNextChapter = () => {
-    // This is a simplified approach - in a real app you'd check the max chapters
-    setCurrentChapter(currentChapter + 1)
-  }
-
-  const handleChapterChange = (chapter: number) => {
-    setCurrentChapter(chapter)
-  }
-
-  // Get the selected outline
-  const selectedOutline = bibleOutlines.find((outline) => outline.id.toString() === selectedOutlineId)
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -151,100 +167,94 @@ export default function ReadPage() {
         <h1 className="text-2xl font-bold">Bible Reader</h1>
         <Link href="/">
           <Button variant="outline" size="sm">
-            <Home className="h-4 w-4 mr-2" /> Back to Home
+            <Home className="h-4 w-4 mr-2" /> Home
           </Button>
         </Link>
       </div>
 
-      <div className="mb-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Bible Version</label>
-            <Select
-              value={selectedVersionId}
-              onValueChange={setSelectedVersionId}
-              disabled={loading || bibleVersions.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Bible version" />
-              </SelectTrigger>
-              <SelectContent>
-                {bibleVersions.map((version) => (
-                  <SelectItem key={version.id} value={version.id.toString()}>
-                    {version.title} ({version.language})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Bible Outline</label>
-            <Select
-              value={selectedOutlineId}
-              onValueChange={setSelectedOutlineId}
-              disabled={bibleOutlines.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Bible outline" />
-              </SelectTrigger>
-              <SelectContent>
-                {bibleOutlines.map((outline) => (
-                  <SelectItem key={outline.id} value={outline.id.toString()}>
-                    {outline.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <Button variant="outline" size="icon" onClick={handlePreviousChapter} disabled={currentChapter <= 1}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-
-          <div className="flex items-center gap-1 px-2">
-            <BookOpen className="h-4 w-4" />
-            <span>Chapter {currentChapter}</span>
-          </div>
-
-          <Button variant="outline" size="icon" onClick={handleNextChapter}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      <Card>
-        <CardContent className="p-6">
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Select Versions</CardTitle>
+          <CardDescription>Choose your preferred Bible version and outline before reading</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
           {loading ? (
             <div className="space-y-4">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
-          ) : bibleContent ? (
-            <BibleReader
-              content={bibleContent}
-              chapter={currentChapter}
-              onChapterChange={handleChapterChange}
-              bibleOutline={selectedOutline}
-            />
           ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Select a Bible version to start reading</p>
-            </div>
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Bible Version</label>
+                <Select value={selectedVersionId} onValueChange={setSelectedVersionId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Bible version" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bibleVersions.map((version) => (
+                      <SelectItem key={version.id} value={version.id.toString()}>
+                        {version.title} ({version.language})
+                        {version.cached && indexedDBAvailable && (
+                          <span className="ml-2 text-green-600 inline-flex items-center">
+                            <Database className="h-3 w-3 mr-1" /> Cached
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedVersionId && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {bibleVersions.find((v) => v.id.toString() === selectedVersionId)?.description ||
+                      "No description available"}
+                    {bibleVersions.find((v) => v.id.toString() === selectedVersionId)?.cached && (
+                      <span className="ml-2 text-green-600 inline-flex items-center">
+                        <Database className="h-3 w-3 mr-1" /> Available offline
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Bible Outline</label>
+                <Select value={selectedOutlineId} onValueChange={setSelectedOutlineId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Bible outline" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bibleOutlines.map((outline) => (
+                      <SelectItem key={outline.id} value={outline.id.toString()}>
+                        {outline.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </>
           )}
         </CardContent>
+        <CardFooter>
+          <Button
+            onClick={handleStartReading}
+            disabled={loading || !selectedVersionId || checkingCache}
+            className="w-full"
+          >
+            <BookOpen className="h-4 w-4 mr-2" />
+            {checkingCache ? "Checking cached versions..." : "Start Reading"}
+          </Button>
+        </CardFooter>
       </Card>
+
+      {/* Display Settings Card */}
+      <DisplaySettingsCard />
     </div>
   )
 }

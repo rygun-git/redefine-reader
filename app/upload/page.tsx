@@ -115,7 +115,7 @@ export default function UploadPage() {
                 id="title"
                 value={bibleTitle}
                 onChange={(e) => setBibleTitle(e.target.value)}
-                placeholder="e.g., King James Version"
+                placeholder="e.g., LLV Version"
                 required
               />
             </div>
