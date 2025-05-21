@@ -15,19 +15,14 @@ export default function ReadViewPage() {
   const router = useRouter()
   const { theme, setTheme } = useTheme()
 
-  // Get URL parameters and update them whenever searchParams changes
+  // Get URL parameters
   const versionParam = searchParams.get("version")
   const outlineParam = searchParams.get("outline")
   const bookParam = searchParams.get("book")
   const chapterParam = searchParams.get("chapter")
 
-  // Create state to track the current chapter for display purposes
-  const [currentChapter, setCurrentChapter] = useState(chapterParam)
-
-  // Update the current chapter whenever the URL parameter changes
-  useEffect(() => {
-    setCurrentChapter(chapterParam)
-  }, [chapterParam])
+  // Create state to track the displayed chapter
+  const [displayedChapter, setDisplayedChapter] = useState(chapterParam)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,10 +30,50 @@ export default function ReadViewPage() {
   // Use the URL resolver hook
   const { versionUrl, outlineUrl, loading: urlLoading, error: urlError } = useUrlResolver(versionParam, outlineParam)
 
-  // Listen for chapter changes from the BibleReader component
-  const handleChapterChange = (newChapter: number) => {
-    setCurrentChapter(String(newChapter))
-  }
+  // Listen for URL changes
+  useEffect(() => {
+    // Update displayed chapter when URL changes
+    setDisplayedChapter(chapterParam)
+
+    // Also listen for history changes (back/forward navigation)
+    const handlePopState = () => {
+      const newParams = new URLSearchParams(window.location.search)
+      const newChapter = newParams.get("chapter")
+      setDisplayedChapter(newChapter)
+    }
+
+    window.addEventListener("popstate", handlePopState)
+
+    // Create a MutationObserver to watch for changes to the URL
+    const observer = new MutationObserver((mutations) => {
+      const newParams = new URLSearchParams(window.location.search)
+      const newChapter = newParams.get("chapter")
+      if (newChapter !== displayedChapter) {
+        setDisplayedChapter(newChapter)
+      }
+    })
+
+    // Observe the document title as a proxy for URL changes
+    observer.observe(document, { subtree: true, childList: true })
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState)
+      observer.disconnect()
+    }
+  }, [chapterParam, displayedChapter])
+
+  // Create an interval to check for URL changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newParams = new URLSearchParams(window.location.search)
+      const newChapter = newParams.get("chapter")
+      if (newChapter !== displayedChapter) {
+        setDisplayedChapter(newChapter)
+      }
+    }, 500) // Check every 500ms
+
+    return () => clearInterval(interval)
+  }, [displayedChapter])
 
   useEffect(() => {
     // Check if we have all required parameters
@@ -131,6 +166,9 @@ export default function ReadViewPage() {
   const fallbackVersionUrl = "/bibles/3.txt"
   const fallbackOutlineUrl = "/outlines/11.json"
 
+  // Get the current chapter from URL or state
+  const currentChapter = new URLSearchParams(window.location.search).get("chapter") || displayedChapter
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
@@ -157,7 +195,6 @@ export default function ReadViewPage() {
         outlineUrl={outlineUrl || fallbackOutlineUrl}
         book={bookParam}
         chapter={Number(chapterParam)}
-        onChapterChange={handleChapterChange}
       />
     </div>
   )
