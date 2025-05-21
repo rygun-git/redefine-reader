@@ -261,7 +261,7 @@ export default function ChapterSelectPage() {
                       className="w-full h-auto py-3 px-4 flex items-center justify-between hover:bg-white-50 cursor-pointer border-b rounded-b-none transition-colors"
                     >
                       <div className="flex flex-col items-start">
-                        <div className="font-bold text-lg text-gray-800">Chapter {chapter.number}</div>
+                        <div className="text-2xl font-semibold leading-none tracking-tight">Chapter {chapter.number}</div>
                         {!showSections && firstSectionTitle && (
                           <div className="text-left text-xs text-gray-500 mt-1 truncate w-full">
                             {firstSectionTitle}
