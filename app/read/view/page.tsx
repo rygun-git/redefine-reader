@@ -15,16 +15,30 @@ export default function ReadViewPage() {
   const router = useRouter()
   const { theme, setTheme } = useTheme()
 
+  // Get URL parameters and update them whenever searchParams changes
   const versionParam = searchParams.get("version")
   const outlineParam = searchParams.get("outline")
   const bookParam = searchParams.get("book")
   const chapterParam = searchParams.get("chapter")
+
+  // Create state to track the current chapter for display purposes
+  const [currentChapter, setCurrentChapter] = useState(chapterParam)
+
+  // Update the current chapter whenever the URL parameter changes
+  useEffect(() => {
+    setCurrentChapter(chapterParam)
+  }, [chapterParam])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Use the URL resolver hook
   const { versionUrl, outlineUrl, loading: urlLoading, error: urlError } = useUrlResolver(versionParam, outlineParam)
+
+  // Listen for chapter changes from the BibleReader component
+  const handleChapterChange = (newChapter: number) => {
+    setCurrentChapter(String(newChapter))
+  }
 
   useEffect(() => {
     // Check if we have all required parameters
@@ -127,7 +141,7 @@ export default function ReadViewPage() {
             </Button>
           </Link>
           <h1 className="text-2xl font-bold">
-            {bookParam} {chapterParam}
+            {bookParam} {currentChapter}
           </h1>
         </div>
         <Link href="/read">
@@ -143,6 +157,7 @@ export default function ReadViewPage() {
         outlineUrl={outlineUrl || fallbackOutlineUrl}
         book={bookParam}
         chapter={Number(chapterParam)}
+        onChapterChange={handleChapterChange}
       />
     </div>
   )
