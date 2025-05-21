@@ -130,7 +130,7 @@ export default function ReadViewPage() {
         </div>
         <Link href="/read">
           <Button variant="outline" size="sm">
-            <Home className="h-4 w-4 mr-2" /> Back to Home
+            <Home className="h-4 w-4 mr-2" />
           </Button>
         </Link>
       </div>
