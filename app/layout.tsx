@@ -14,6 +14,19 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   title: "Bible Reader",
   description: "A simple Bible reader application",
+  manifest: "/manifest.json",
+  themeColor: "#3b82f6",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Bible Reader",
+  },
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  },
     generator: 'v0.dev'
 }
 
@@ -36,6 +49,20 @@ export default function RootLayout({
         />
         {/* Add SBL Greek font alternative */}
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&display=swap" />
+
+        {/* PWA Meta Tags */}
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Bible Reader" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="Bible Reader" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="msapplication-TileColor" content="#3b82f6" />
+        <meta name="msapplication-tap-highlight" content="no" />
+
+        {/* Service Worker Registration */}
+        <script src="/register-sw.js" defer></script>
       </head>
       <body className={`${montserrat.variable} font-montserrat`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
