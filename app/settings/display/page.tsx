@@ -9,15 +9,23 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronLeft, Save, Check, Moon, Sun } from "lucide-react"
-import { getDisplaySettings, storeDisplaySettings, isIndexedDBAvailable } from "@/lib/indexedDB"
+import {
+  getDisplaySettings,
+  storeDisplaySettings,
+  isIndexedDBAvailable,
+  getLastRead,
+  storeLastRead,
+} from "@/lib/indexedDB"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import { useTheme } from "next-themes"
-import { supabase } from "@/lib/supabase"
+import { allFonts, fontLanguages, type FontDefinition } from "@/lib/fonts"
 
+// Update the DisplaySettings interface to include inlineVerses
 interface DisplaySettings {
   fontSize: number
   fontFamily: string
+  appFontFamily: string
   fontWeight: number
   lineHeight: number
   paragraphSpacing: number
@@ -28,8 +36,13 @@ interface DisplaySettings {
   underscoredPhraseStyle: "keep" | "remove" | "bold"
   sectionTitleColor: string
   darkMode: boolean
-  defaultVersionId: string
-  defaultOutlineId: string
+  forceNewParagraph: boolean
+  equalIndentation: boolean
+  verseNumberColor: string
+  verseNumberSize: number
+  inlineVerses: boolean
+  defaultVersionId?: string
+  defaultOutlineId?: string
 }
 
 export default function DisplaySettingsPage() {
@@ -37,9 +50,11 @@ export default function DisplaySettingsPage() {
   const { theme, setTheme } = useTheme()
   const [indexedDBAvailable, setIndexedDBAvailable] = useState<boolean>(false)
   const [originalSettings, setOriginalSettings] = useState<DisplaySettings | null>(null)
+  // Update the default state to include inlineVerses
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>({
-    fontSize: 18,
-    fontFamily: "inherit",
+    fontSize: 22,
+    fontFamily: "var(--font-montserrat), system-ui, sans-serif",
+    appFontFamily: "var(--font-montserrat), system-ui, sans-serif",
     fontWeight: 400,
     lineHeight: 1.5,
     paragraphSpacing: 16,
@@ -47,11 +62,14 @@ export default function DisplaySettingsPage() {
     showFootnoteSection: true,
     showLineNumbers: false,
     showDebugInfo: false,
-    underscoredPhraseStyle: "keep",
-    sectionTitleColor: "#3b82f6", // Default to blue
+    underscoredPhraseStyle: "remove",
+    sectionTitleColor: "#3b82f6",
     darkMode: false,
-    defaultVersionId: "2",
-    defaultOutlineId: "11",
+    forceNewParagraph: false,
+    equalIndentation: false,
+    verseNumberColor: "#888888",
+    verseNumberSize: 12,
+    inlineVerses: false,
   })
   const [previewText, setPreviewText] = useState<string>(
     "In the beginning God created the heaven and the earth. And the earth was without form, and void; and darkness was upon the face of the deep.",
@@ -59,32 +77,20 @@ export default function DisplaySettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
-  const [bibleVersions, setBibleVersions] = useState<any[]>([])
-  const [bibleOutlines, setBibleOutlines] = useState<any[]>([])
+  const [fonts, setFonts] = useState<FontDefinition[]>(allFonts)
+  const [lastReadData, setLastReadData] = useState<any>(null)
+  const [themeInitialized, setThemeInitialized] = useState(false)
 
-  // Fetch Bible versions and outlines
+  // Load fonts directly from lib/fonts.ts
   useEffect(() => {
-    const fetchBiblesAndOutlines = async () => {
-      try {
-        const { data: versions, error: versionError } = await supabase
-          .from("bible_versions")
-          .select("id, title")
-          .order("title")
-        if (versionError) throw versionError
-        setBibleVersions(versions || [])
+    // Log the loaded fonts to console for verification
+    console.log(
+      `Loaded ${allFonts.length} fonts from lib/fonts.ts:`,
+      allFonts.map((font) => `${font.name} (${font.language})`),
+    )
 
-        const { data: outlines, error: outlineError } = await supabase
-          .from("bible_outlines")
-          .select("id, title")
-          .order("title")
-        if (outlineError) throw outlineError
-        setBibleOutlines(outlines || [])
-      } catch (error) {
-        console.error("Error fetching Bible versions and outlines:", error)
-      }
-    }
-
-    fetchBiblesAndOutlines()
+    // Set fonts directly from allFonts
+    setFonts(allFonts)
   }, [])
 
   // Check if IndexedDB is available
@@ -96,8 +102,26 @@ export default function DisplaySettingsPage() {
     checkIndexedDB()
   }, [])
 
+  // Load last read data to preserve version and outline
+  useEffect(() => {
+    const loadLastReadData = async () => {
+      try {
+        const data = await getLastRead()
+        if (data) {
+          console.log("Loaded last read data:", data)
+          setLastReadData(data)
+        }
+      } catch (error) {
+        console.error("Error loading last read data:", error)
+      }
+    }
+
+    loadLastReadData()
+  }, [])
+
   // Load saved settings
   useEffect(() => {
+    // Update the loadDisplaySettings function to include inlineVerses
     const loadDisplaySettings = async () => {
       try {
         const settings = await getDisplaySettings()
@@ -108,19 +132,33 @@ export default function DisplaySettingsPage() {
             // Ensure we have defaults for any new settings
             paragraphSpacing: settings.paragraphSpacing || 16,
             sectionTitleColor: settings.sectionTitleColor || "#3b82f6",
-            darkMode: settings.darkMode || false,
-            defaultVersionId: settings.defaultVersionId || "1",
-            defaultOutlineId: settings.defaultOutlineId || "1",
+            darkMode: settings.darkMode !== undefined ? settings.darkMode : false,
+            forceNewParagraph: settings.forceNewParagraph !== undefined ? settings.forceNewParagraph : false,
+            equalIndentation: settings.equalIndentation !== undefined ? settings.equalIndentation : false,
+            verseNumberColor: settings.verseNumberColor || "#888888",
+            verseNumberSize: settings.verseNumberSize || 12,
+            inlineVerses: settings.inlineVerses !== undefined ? settings.inlineVerses : false,
+            appFontFamily: settings.appFontFamily || "var(--font-montserrat), system-ui, sans-serif",
+            fontFamily: settings.fontFamily || "var(--font-montserrat), system-ui, sans-serif",
+            // Preserve version and outline settings
+            defaultVersionId: settings.defaultVersionId,
+            defaultOutlineId: settings.defaultOutlineId,
           }
           setDisplaySettings(updatedSettings)
           // Store a deep copy of the original settings
           setOriginalSettings(JSON.parse(JSON.stringify(updatedSettings)))
 
-          // Set theme based on settings
-          if (updatedSettings.darkMode) {
-            setTheme("dark")
-          } else {
-            setTheme("light")
+          // Set theme based on settings, but only if not already initialized
+          if (!themeInitialized) {
+            const currentTheme = theme || (typeof window !== "undefined" ? localStorage.getItem("theme") : null)
+            const newTheme = updatedSettings.darkMode ? "dark" : "light"
+
+            // Only set theme if it's different from current
+            if (currentTheme !== newTheme) {
+              console.log(`Setting theme to ${newTheme} (was ${currentTheme})`)
+              setTheme(newTheme)
+            }
+            setThemeInitialized(true)
           }
         } else {
           // If no settings found, set the current defaults as original
@@ -135,7 +173,7 @@ export default function DisplaySettingsPage() {
     }
 
     loadDisplaySettings()
-  }, [])
+  }, [theme, setTheme, themeInitialized])
 
   // Check for changes
   useEffect(() => {
@@ -174,9 +212,31 @@ export default function DisplaySettingsPage() {
   const saveAllSettings = async () => {
     setIsSaving(true)
     try {
-      await storeDisplaySettings(displaySettings)
+      // Preserve version and outline IDs from last read data if they exist
+      const settingsToSave = { ...displaySettings }
+
+      if (lastReadData) {
+        // Only set these if they're not already set in displaySettings
+        if (!settingsToSave.defaultVersionId && lastReadData.versionId) {
+          settingsToSave.defaultVersionId = lastReadData.versionId
+        }
+        if (!settingsToSave.defaultOutlineId && lastReadData.outlineId) {
+          settingsToSave.defaultOutlineId = lastReadData.outlineId
+        }
+      }
+
+      await storeDisplaySettings(settingsToSave)
+
+      // Also update last read data to ensure version/outline are preserved
+      if (lastReadData) {
+        await storeLastRead({
+          ...lastReadData,
+          timestamp: Date.now(),
+        })
+      }
+
       // Store a deep copy of the current settings as the new original
-      setOriginalSettings(JSON.parse(JSON.stringify(displaySettings)))
+      setOriginalSettings(JSON.parse(JSON.stringify(settingsToSave)))
       setHasChanges(false)
       toast({
         title: "Settings saved",
@@ -192,6 +252,24 @@ export default function DisplaySettingsPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  // Group fonts by language
+  const fontsByLanguage = fonts.reduce(
+    (acc, font) => {
+      if (!acc[font.language]) {
+        acc[font.language] = []
+      }
+      acc[font.language].push(font)
+      return acc
+    },
+    {} as Record<string, FontDefinition[]>,
+  )
+
+  // Get language name from language ID
+  const getLanguageName = (languageId: string): string => {
+    const language = fontLanguages.find((lang) => lang.id === languageId)
+    return language ? language.name : languageId.charAt(0).toUpperCase() + languageId.slice(1)
   }
 
   return (
@@ -223,61 +301,30 @@ export default function DisplaySettingsPage() {
                 }}
               >
                 <p className="mb-2">
-                  <span className="verse-number font-bold text-sm mr-2">1</span>
+                  <span
+                    className="verse-number font-bold mr-2"
+                    style={{
+                      color: displaySettings.verseNumberColor,
+                      fontSize: `${displaySettings.verseNumberSize}px`,
+                    }}
+                  >
+                    1
+                  </span>
                   {previewText}
                 </p>
                 <p style={{ marginTop: `${displaySettings.paragraphSpacing}px` }}>
-                  <span className="verse-number font-bold text-sm mr-2">2</span>
+                  <span
+                    className="verse-number font-bold mr-2"
+                    style={{
+                      color: displaySettings.verseNumberColor,
+                      fontSize: `${displaySettings.verseNumberSize}px`,
+                    }}
+                  >
+                    2
+                  </span>
                   And the Spirit of God moved upon the face of the waters.
                 </p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Default Bible and Outline Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Default Bible and Outline</CardTitle>
-            <CardDescription>Set your preferred Bible version and outline</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="default-bible">Default Bible Version</Label>
-              <Select
-                value={displaySettings.defaultVersionId}
-                onValueChange={(value) => updateDisplaySetting("defaultVersionId", value)}
-              >
-                <SelectTrigger id="default-bible">
-                  <SelectValue placeholder="Select Bible Version" />
-                </SelectTrigger>
-                <SelectContent>
-                  {bibleVersions.map((version) => (
-                    <SelectItem key={version.id} value={version.id.toString()}>
-                      {version.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="default-outline">Default Outline</Label>
-              <Select
-                value={displaySettings.defaultOutlineId}
-                onValueChange={(value) => updateDisplaySetting("defaultOutlineId", value)}
-              >
-                <SelectTrigger id="default-outline">
-                  <SelectValue placeholder="Select Outline" />
-                </SelectTrigger>
-                <SelectContent>
-                  {bibleOutlines.map((outline) => (
-                    <SelectItem key={outline.id} value={outline.id.toString()}>
-                      {outline.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
@@ -328,7 +375,7 @@ export default function DisplaySettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="font-family">Font Family</Label>
+              <Label htmlFor="font-family">Reader Font</Label>
               <Select
                 value={displaySettings.fontFamily}
                 onValueChange={(value) => updateDisplaySetting("fontFamily", value)}
@@ -336,14 +383,71 @@ export default function DisplaySettingsPage() {
                 <SelectTrigger id="font-family">
                   <SelectValue placeholder="Select font" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">Montserrat (Default)</SelectItem>
-                  <SelectItem value="Georgia, serif">Georgia</SelectItem>
-                  <SelectItem value="'Times New Roman', serif">Times New Roman</SelectItem>
-                  <SelectItem value="Arial, sans-serif">Arial</SelectItem>
-                  <SelectItem value="monospace">Monospace</SelectItem>
+                <SelectContent className="max-h-[300px]">
+                  {Object.entries(fontsByLanguage).map(([language, languageFonts]) => (
+                    <div key={language} className="py-2">
+                      <div className="px-2 text-sm font-semibold text-muted-foreground mb-1">
+                        {getLanguageName(language)}
+                      </div>
+                      {languageFonts.map((font) => (
+                        <div key={font.id.toString()} className="font-preview">
+                          <SelectItem
+                            key={font.id.toString()}
+                            value={font.cssName}
+                            style={{ fontFamily: font.cssName }}
+                          >
+                            <div>
+                              <div className="font-medium">{font.name}</div>
+                              <div className="text-xs text-muted-foreground mt-1" style={{ fontFamily: font.cssName }}>
+                                The quick brown fox jumps over the lazy dog
+                              </div>
+                            </div>
+                          </SelectItem>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">Font used for Bible text and reading content</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="app-font-family">App Font</Label>
+              <Select
+                value={displaySettings.appFontFamily}
+                onValueChange={(value) => updateDisplaySetting("appFontFamily", value)}
+              >
+                <SelectTrigger id="app-font-family">
+                  <SelectValue placeholder="Select app font" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {Object.entries(fontsByLanguage).map(([language, languageFonts]) => (
+                    <div key={language} className="py-2">
+                      <div className="px-2 text-sm font-semibold text-muted-foreground mb-1">
+                        {getLanguageName(language)}
+                      </div>
+                      {languageFonts.map((font) => (
+                        <div key={font.id.toString()} className="font-preview">
+                          <SelectItem
+                            key={font.id.toString()}
+                            value={font.cssName}
+                            style={{ fontFamily: font.cssName }}
+                          >
+                            <div>
+                              <div className="font-medium">{font.name}</div>
+                              <div className="text-xs text-muted-foreground mt-1" style={{ fontFamily: font.cssName }}>
+                                The quick brown fox jumps over the lazy dog
+                              </div>
+                            </div>
+                          </SelectItem>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Font used for UI elements and navigation</p>
             </div>
 
             <div className="space-y-2">
@@ -441,11 +545,62 @@ export default function DisplaySettingsPage() {
 
             <div className="flex items-center space-x-2">
               <Switch
-                id="show-debug-info"
-                checked={displaySettings.showDebugInfo}
-                onCheckedChange={(value) => updateDisplaySetting("showDebugInfo", value)}
+                id="force-new-paragraph"
+                checked={displaySettings.forceNewParagraph}
+                onCheckedChange={(value) => updateDisplaySetting("forceNewParagraph", value)}
               />
-              <Label htmlFor="show-debug-info">Show Debug Information</Label>
+              <Label htmlFor="force-new-paragraph">Force New Paragraph After Full Stop</Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="equal-indentation"
+                checked={displaySettings.equalIndentation}
+                onCheckedChange={(value) => updateDisplaySetting("equalIndentation", value)}
+              />
+              <Label htmlFor="equal-indentation">Equal Indentation</Label>
+            </div>
+
+            {/* Add the inline verses switch to the Text Display section
+            Find the section with the other switches and add this one after the equal indentation switch */}
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="inline-verses"
+                checked={displaySettings.inlineVerses}
+                onCheckedChange={(value) => updateDisplaySetting("inlineVerses", value)}
+              />
+              <Label htmlFor="inline-verses">Inline Verses (Continuous Text)</Label>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="verse-number-color">Verse Number Color</Label>
+              <div className="flex items-center space-x-2">
+                <Input
+                  id="verse-number-color"
+                  type="color"
+                  value={displaySettings.verseNumberColor}
+                  onChange={(e) => updateDisplaySetting("verseNumberColor", e.target.value)}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  type="text"
+                  value={displaySettings.verseNumberColor}
+                  onChange={(e) => updateDisplaySetting("verseNumberColor", e.target.value)}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="verse-number-size">Verse Number Size: {displaySettings.verseNumberSize}px</Label>
+              <Slider
+                id="verse-number-size"
+                min={8}
+                max={16}
+                step={1}
+                value={[displaySettings.verseNumberSize]}
+                onValueChange={(value) => updateDisplaySetting("verseNumberSize", value[0])}
+              />
             </div>
 
             <div className="flex items-center space-x-2">

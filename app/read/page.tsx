@@ -3,26 +3,15 @@
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Home, BookOpen, RefreshCw, Link2 } from "lucide-react"
+import { Home, BookOpen, Link2 } from "lucide-react"
 import Link from "next/link"
 import { DisplaySettingsCard } from "@/components/display-settings-card"
+import { defaultBibleVersions, defaultBibleOutlines } from "@/lib/available-content"
+import { getLastRead, storeLastRead } from "@/lib/indexedDB"
 
 interface BibleVersion {
   id: number
@@ -38,61 +27,6 @@ interface BibleOutline {
   file_url?: string | null
 }
 
-const HARDCODED_VERSIONS: BibleVersion[] = [
-
-
-  {
-    id: 9,
-    title: "LLV 352",
-    language: "English",
-    description: "Lawful Literal Version, Accountable Brothers' Standard Version of 2019-2025",
-  },
-  {
-    id: 5,
-    title: "LLV 287",
-    language: "English",
-    description: "Lawful Literal Version, Accountable Brothers' Standard Version of 2019-2023",
-    file_url: "",
-  },
-
-  {
-    id: 6,
-    title: "Westminster Leningrad Codex",
-    language: "English",
-    description: "WLC - Westminster Leningrad Codex",
-    file_url: "",
-  },
-
-    {
-    id: 4,
-    title: "American Standard Version (ASV)",
-    language: "English",
-    description: "American Standard Version of 1901",
-    file_url: "",
-  },
-
-    {
-    id: 0,
-    title: "LLV 352 (DEVELOPMENT TEST)",
-    language: "English",
-    description: "Lawful Literal Version, Accountable Brothers' Standard Version of 2019-2025",
-  },
-
-
-]
-
-const HARDCODED_OUTLINES: BibleOutline[] = [
-  {
-    id: 11,
-    title: "LLV, AD2025/V1",
-  },
-  {
-    id: 1,
-    title: "Langton, AD1227",
-    file_url: "",
-  },
-]
-
 export default function ReadPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -106,23 +40,47 @@ export default function ReadPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchData = () => {
+  const fetchData = async () => {
     setLoading(true)
 
-    setBibleVersions(HARDCODED_VERSIONS)
-    setBibleOutlines(HARDCODED_OUTLINES)
+    setBibleVersions(defaultBibleVersions)
+    setBibleOutlines(defaultBibleOutlines)
 
-    // Set default selected values
-    if (versionParam) {
-      setSelectedVersionId(versionParam)
-    } else {
-      setSelectedVersionId(HARDCODED_VERSIONS[0].id.toString())
-    }
+    try {
+      // Check if the reader has been opened before by getting lastRead data
+      const lastReadData = await getLastRead()
+      console.log("Last read data:", lastReadData)
 
-    if (outlineParam) {
-      setSelectedOutlineId(outlineParam)
-    } else {
-      setSelectedOutlineId(HARDCODED_OUTLINES[0].id.toString())
+      // Set default selected values
+      const defaultVersionId = defaultBibleVersions[0].id.toString()
+      const defaultOutlineId = defaultBibleOutlines[0].id.toString()
+
+      if (versionParam) {
+        // If URL has version parameter, use that
+        setSelectedVersionId(versionParam)
+      } else if (lastReadData && lastReadData.versionId) {
+        // If reader has been opened before, use the last read version
+        setSelectedVersionId(lastReadData.versionId.toString())
+      } else {
+        // Otherwise use default
+        setSelectedVersionId(defaultVersionId)
+      }
+
+      if (outlineParam) {
+        // If URL has outline parameter, use that
+        setSelectedOutlineId(outlineParam)
+      } else if (lastReadData && lastReadData.outlineId) {
+        // If reader has been opened before, use the last read outline
+        setSelectedOutlineId(lastReadData.outlineId.toString())
+      } else {
+        // Otherwise use default
+        setSelectedOutlineId(defaultOutlineId)
+      }
+    } catch (error) {
+      console.error("Error loading last read data:", error)
+      // Fall back to defaults if there's an error
+      setSelectedVersionId(defaultBibleVersions[0].id.toString())
+      setSelectedOutlineId(defaultBibleOutlines[0].id.toString())
     }
 
     setLoading(false)
@@ -132,10 +90,25 @@ export default function ReadPage() {
     fetchData()
   }, [])
 
-  const handleStartReading = () => {
+  const handleStartReading = async () => {
     if (selectedVersionId && selectedOutlineId) {
       const selectedVersion = bibleVersions.find((v) => v.id.toString() === selectedVersionId)
       const selectedOutline = bibleOutlines.find((o) => o.id.toString() === selectedOutlineId)
+
+      // Save the selected version and outline to LocalDB
+      try {
+        await storeLastRead({
+          versionId: selectedVersionId,
+          outlineId: selectedOutlineId,
+          versionTitle: selectedVersion?.title,
+          outlineTitle: selectedOutline?.title,
+          // We don't have book and chapter yet, so we don't set them
+        })
+        console.log("Saved selections to LocalDB")
+      } catch (error) {
+        console.error("Error saving selections to LocalDB:", error)
+        // Continue even if saving fails
+      }
 
       let url = `/select/book?version=${selectedVersionId}&outline=${selectedOutlineId}`
 
@@ -167,9 +140,7 @@ export default function ReadPage() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Select Versions</CardTitle>
-          <CardDescription>
-            Choose your preferred Bible version and outline before reading
-          </CardDescription>
+          <CardDescription>Choose your preferred Bible version and outline before reading</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {loading ? (
@@ -181,10 +152,7 @@ export default function ReadPage() {
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Bible Version</label>
-                <Select
-                  value={selectedVersionId}
-                  onValueChange={setSelectedVersionId}
-                >
+                <Select value={selectedVersionId} onValueChange={setSelectedVersionId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select Bible version" />
                   </SelectTrigger>
@@ -207,10 +175,7 @@ export default function ReadPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Bible Outline</label>
-                <Select
-                  value={selectedOutlineId}
-                  onValueChange={setSelectedOutlineId}
-                >
+                <Select value={selectedOutlineId} onValueChange={setSelectedOutlineId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select Bible outline" />
                   </SelectTrigger>

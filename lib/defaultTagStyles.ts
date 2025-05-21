@@ -90,4 +90,12 @@ export const defaultTagStyles: TagStyle[] = [
     css_class: "ml-6 inline-block",
     ignored: false,
   },
+  {
+    name: "li",
+    open_tag: "<li>",
+    close_tag: "</li>",
+    description: "Bible reference link",
+    css_class: "text-blue-600 underline cursor-pointer hover:text-blue-800",
+    ignored: false,
+  },
 ]

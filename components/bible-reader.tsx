@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { BookmarkDialog } from "@/components/bookmark-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { type TagStyle, loadTagStyles } from "@/lib/loadTagStyles"
+import { ReadingPlanStatus } from "@/components/reading-plan-status"
 
 // Function to fetch Bible content from URL, limited to book's line range
 const fetchBibleContentFromUrl = async (url: string, bookName: string | undefined, outline: any): Promise<string> => {
@@ -30,10 +31,10 @@ const fetchBibleContentFromUrl = async (url: string, bookName: string | undefine
         if (!text.trim()) {
           throw new Error("Empty content received from local URL")
         }
-        console.log("Local Bible content fetched:", { length: text.length })
+        // console.log("Local Bible content fetched:", { length: text.length })
         return text
       } catch (localError) {
-        console.error("Error fetching local Bible content:", localError)
+        //  console.error("Error fetching local Bible content:", localError)
         throw localError
       }
     }
@@ -56,11 +57,11 @@ const fetchBibleContentFromUrl = async (url: string, bookName: string | undefine
         throw new Error("Empty content received from URL")
       }
 
-      console.log("Bible content fetched (full):", { length: text.length })
+      // console.log("Bible content fetched (full):", { length: text.length })
       return text
     }
 
-    console.log("Attempting to fetch Bible content for book:", { url, bookName })
+    // console.log("Attempting to fetch Bible content for book:", { url, bookName })
 
     const lineRanges = outline.chapters
       .filter((chapter: any) => chapter.startLine && chapter.endLine)
@@ -80,7 +81,7 @@ const fetchBibleContentFromUrl = async (url: string, bookName: string | undefine
       throw new Error(`Invalid line range for book ${bookName}: ${minLine}-${maxLine}`)
     }
 
-    console.log("Calculated line range:", { bookName, minLine, maxLine })
+    // console.log("Calculated line range:", { bookName, minLine, maxLine })
 
     const response = await fetch(url, {
       method: "GET",
@@ -361,8 +362,9 @@ const fetchBibleOutlineFromUrl = async (url: string, bookName: string | undefine
 
 // Constants for pagination and safety limits
 const CHAPTERS_PER_PAGE = 100
-const MAX_VERSES_PER_CHAPTER = 200
+const MAX_VERSES_PER_CHAPTER = 100
 
+// Update the BibleReaderProps interface to include inlineVerses
 interface BibleReaderProps {
   content?: string
   chapter?: number
@@ -389,7 +391,10 @@ interface BibleReaderProps {
   displaySettings?: {
     fontSize: number
     fontFamily: string
+    appFontFamily: string
     fontWeight: number
+    lineHeight: number
+    paragraphSpacing: number
     showFootnotes: boolean
     showFootnoteSection: boolean
     darkMode: boolean
@@ -397,8 +402,11 @@ interface BibleReaderProps {
     showDebugInfo: boolean
     underscoredPhraseStyle: "keep" | "remove" | "bold"
     sectionTitleColor: string
-    defaultVersionId?: string
-    defaultOutlineId?: string
+    forceNewParagraph: boolean
+    equalIndentation: boolean
+    verseNumberColor: string
+    verseNumberSize: number
+    inlineVerses: boolean
   }
   preloadedOutlines?: any
 }
@@ -433,6 +441,7 @@ interface Chapter {
   sections?: Section[]
 }
 
+// Update the DisplaySettings interface to include inlineVerses
 interface DisplaySettings {
   fontSize: number
   lineHeight: number
@@ -449,6 +458,11 @@ interface DisplaySettings {
   paragraphSpacing?: number
   defaultVersionId?: string
   defaultOutlineId?: string
+  forceNewParagraph?: boolean
+  equalIndentation?: boolean
+  verseNumberColor?: string
+  verseNumberSize?: number
+  inlineVerses?: boolean
 }
 
 interface Footnote {
@@ -471,6 +485,54 @@ export function BibleReader({
 }: BibleReaderProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // Add this function to parse Bible references
+  const parseBibleReference = (reference: string): { book: string; chapter: number; verse?: number } | null => {
+    try {
+      // Handle formats like "Hosea:2" or "Hosea:2:3" (book:chapter or book:chapter:verse)
+      const parts = reference.split(":")
+
+      if (parts.length < 2) return null
+
+      const book = parts[0].trim()
+      const chapter = Number.parseInt(parts[1].trim(), 10)
+      let verse: number | undefined = undefined
+
+      if (parts.length > 2) {
+        verse = Number.parseInt(parts[2].trim(), 10)
+      }
+
+      if (isNaN(chapter)) return null
+
+      return { book, chapter, verse }
+    } catch (error) {
+      console.error("Error parsing Bible reference:", error)
+      return null
+    }
+  }
+
+  // Add this function to navigate to a Bible reference
+  const navigateToBibleReference = (reference: string) => {
+    const parsedRef = parseBibleReference(reference)
+    if (!parsedRef) return
+
+    const { book, chapter, verse } = parsedRef
+
+    // Create URL with the current parameters plus the new book and chapter
+    const url = new URL(window.location.href)
+    url.searchParams.set("book", book)
+    url.searchParams.set("chapter", chapter.toString())
+
+    // Navigate to the new URL
+    router.push(url.toString())
+
+    // If there's a verse, we'll need to scroll to it after navigation
+    // This will be handled by the useEffect that runs after navigation
+    if (verse) {
+      // Store the verse to scroll to in sessionStorage
+      sessionStorage.setItem("scrollToVerse", verse.toString())
+    }
+  }
 
   const urlParams = useMemo(() => {
     const book = searchParams.get("book") || propBook || undefined
@@ -516,19 +578,25 @@ export function BibleReader({
   const [error, setError] = useState<string | null>(null)
   const [currentChapter, setCurrentChapter] = useState(urlParams.chapter)
   const [chapters, setChapters] = useState<Chapter[]>([])
+  // Update the default state to include inlineVerses
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>({
     fontSize: 22,
-    lineHeight: 1.5,
+    fontFamily: "var(--reader-font), system-ui, sans-serif",
+    appFontFamily: "var(--app-font), system-ui, sans-serif",
     fontWeight: 400,
-    showVerseNumbers: true,
+    lineHeight: 1.5,
+    paragraphSpacing: 16,
+    showFootnotes: true,
+    showFootnoteSection: true,
     showLineNumbers: false,
     showDebugInfo: false,
     underscoredPhraseStyle: "keep",
     sectionTitleColor: "#3b82f6",
-    paragraphSpacing: 16,
-    showFootnotes: true,
-    showFootnoteSection: true,
-    darkMode: false,
+    forceNewParagraph: false,
+    equalIndentation: false,
+    verseNumberColor: "#888888",
+    verseNumberSize: 12,
+    inlineVerses: false,
   })
   const contentRef = useRef<HTMLDivElement>(null)
   const [fontFamily, setFontFamily] = useState<string | null>(null)
@@ -549,6 +617,7 @@ export function BibleReader({
   const lastProcessedBook = useRef<string | undefined>(undefined)
 
   // Load display settings from localStorage
+  // Update the useEffect that loads settings from localStorage to include inlineVerses
   useEffect(() => {
     const savedSettings = localStorage.getItem("bibleReaderDisplaySettings")
     if (savedSettings) {
@@ -556,7 +625,6 @@ export function BibleReader({
         const parsedSettings = JSON.parse(savedSettings)
         setDisplaySettings((prev) => ({
           ...prev,
-          ...parsedSettings,
           fontWeight: parsedSettings.fontWeight || 400,
           showDebugInfo: parsedSettings.showDebugInfo || false,
           sectionTitleColor: parsedSettings.sectionTitleColor || "#3b82f6",
@@ -565,6 +633,11 @@ export function BibleReader({
           showFootnoteSection:
             parsedSettings.showFootnoteSection !== undefined ? parsedSettings.showFootnoteSection : true,
           darkMode: parsedSettings.darkMode !== undefined ? parsedSettings.darkMode : false,
+          forceNewParagraph: parsedSettings.forceNewParagraph !== undefined ? parsedSettings.forceNewParagraph : false,
+          equalIndentation: parsedSettings.equalIndentation !== undefined ? parsedSettings.equalIndentation : false,
+          verseNumberColor: parsedSettings.verseNumberColor || "#888888",
+          verseNumberSize: parsedSettings.verseNumberSize || 12,
+          inlineVerses: parsedSettings.inlineVerses !== undefined ? parsedSettings.inlineVerses : false,
         }))
         setShowFootnotes(parsedSettings.showFootnotes !== undefined ? parsedSettings.showFootnotes : true)
 
@@ -1113,11 +1186,32 @@ export function BibleReader({
     }
   }
 
+  // Helper function to clean verse text for display
+  const cleanVerseText = (text: string): string => {
+    // Remove all HTML tags
+    let cleanedText = text.replace(/<[^>]*>/g, "")
+
+    // Remove footnote markers
+    cleanedText = cleanedText.replace(/\[\d+\]/g, "")
+
+    // Trim whitespace
+    cleanedText = cleanedText.trim()
+
+    return cleanedText
+  }
+
+  // Update the processHtmlTags function to handle the new <li> tag
   const processHtmlTags = (text: string): string => {
     let processedText = text
     if (!tagStyles || tagStyles.length === 0) {
       return processedText
     }
+
+    // Process Bible reference links
+    const bibleRefRegex = /<li>(.*?)<\/li>/g
+    processedText = processedText.replace(bibleRefRegex, (match, reference) => {
+      return `<a href="javascript:void(0)" class="bible-ref-link text-blue-600 underline cursor-pointer hover:text-blue-800" data-reference="${reference}">${reference}</a>`
+    })
 
     const rfRegex = /<RF>(.*?)<Rf>(.*?)<\/Rf><\/RF>/g
     processedText = processedText.replace(rfRegex, (match, reference, footnoteContent) => {
@@ -1182,6 +1276,62 @@ export function BibleReader({
     return processedText
   }
 
+  // Add event listener for Bible reference links
+  useEffect(() => {
+    const handleBibleRefClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (target.classList.contains("bible-ref-link") || target.closest(".bible-ref-link")) {
+        event.preventDefault()
+        const link = target.classList.contains("bible-ref-link") ? target : target.closest(".bible-ref-link")
+        const reference = link?.getAttribute("data-reference")
+
+        if (reference) {
+          navigateToBibleReference(reference)
+        }
+      }
+    }
+
+    const contentContainer = contentRef.current
+    if (contentContainer) {
+      contentContainer.addEventListener("click", handleBibleRefClick)
+    }
+
+    return () => {
+      if (contentContainer) {
+        contentContainer.removeEventListener("click", handleBibleRefClick)
+      }
+    }
+  }, [router])
+
+  // Add an effect to scroll to verse after navigation
+  useEffect(() => {
+    const scrollToVerse = sessionStorage.getItem("scrollToVerse")
+    if (scrollToVerse && contentRef.current) {
+      const verseNumber = Number.parseInt(scrollToVerse, 10)
+      if (!isNaN(verseNumber)) {
+        // Find the verse element
+        const verseElements = contentRef.current.querySelectorAll(".verse")
+        for (const element of verseElements) {
+          const verseNumberElement = element.querySelector(".verse-number")
+          if (verseNumberElement && verseNumberElement.textContent?.includes(verseNumber.toString())) {
+            // Scroll to the verse with a small delay to ensure rendering is complete
+            setTimeout(() => {
+              element.scrollIntoView({ behavior: "smooth", block: "center" })
+              // Highlight the verse temporarily
+              element.classList.add("bg-yellow-100", "dark:bg-yellow-900")
+              setTimeout(() => {
+                element.classList.remove("bg-yellow-100", "dark:bg-yellow-900")
+              }, 3000)
+            }, 300)
+            break
+          }
+        }
+        // Clear the stored verse
+        sessionStorage.removeItem("scrollToVerse")
+      }
+    }
+  }, [currentChapter, chapters])
+
   useEffect(() => {
     const currentChapterData = chapters.find((c) => c.chapterNumber === currentChapter)
     if (currentChapterData) {
@@ -1223,21 +1373,38 @@ export function BibleReader({
     }
   }, [currentChapter, chapters])
 
+  // Now update the renderVerse function to apply the verse number color and handle inline verses
   const renderVerse = (verse: ParsedVerse) => {
     let processedText = verse.text
+
+    // Force new paragraph after full stop
+    if (displaySettings.forceNewParagraph) {
+      processedText = processedText.replace(/\.\s*/g, ".<br/><br/>")
+    }
+
     processedText = processedText.replace(/<CM>.*?<\/CM>/g, "")
+
+    // Apply verse number with custom color and size
     processedText = processedText.replace(/<V>(\d+)<\/V>/, (_, num) => {
-      return `<span class="verse-number font-bold text-sm mr-2">${verse.verseNumber}</span>`
+      if (displaySettings.inlineVerses) {
+        return `<sup class="verse-number" style="color: ${displaySettings.verseNumberColor}; font-size: ${displaySettings.verseNumberSize}px;">${verse.verseNumber}</sup> `
+      } else {
+        return `<span class="verse-number" style="color: ${displaySettings.verseNumberColor}; font-size: ${displaySettings.verseNumberSize}px;">${verse.verseNumber}</span>`
+      }
     })
 
     if (!processedText.includes('class="verse-number"')) {
-      processedText = `<span class="verse-number font-bold text-sm mr-2">${verse.verseNumber}</span> ${processedText}`
+      if (displaySettings.inlineVerses) {
+        processedText = `<sup class="verse-number" style="color: ${displaySettings.verseNumberColor}; font-size: ${displaySettings.verseNumberSize}px;">${verse.verseNumber}</sup> ${processedText}`
+      } else {
+        processedText = `<span class="verse-number" style="color: ${displaySettings.verseNumberColor}; font-size: ${displaySettings.verseNumberSize}px;">${verse.verseNumber}</span> ${processedText}`
+      }
     }
 
     const currentChapterData = chapters.find((c) => c.chapterNumber === currentChapter)
     if (displaySettings.showLineNumbers && currentChapterData && !isInformationPage(currentChapterData.name)) {
       processedText = processedText.replace(
-        /<span class="verse-number.*?<\/span>/,
+        /<(span|sup) class="verse-number".*?<\/(span|sup)>/,
         (match) => `${match}<span class="text-blue-500 text-xs font-normal mr-2">[${verse.lineNumber}]</span>`,
       )
     }
@@ -1251,6 +1418,7 @@ export function BibleReader({
       verse.footnotes.forEach((footnote, index) => {
         const globalFootnote = footnotes.find((fn) => fn.id === footnote.id)
         const footnoteNumber = globalFootnote?.number || index + 1
+        // Use consistent blue color for footnote markers
         const footnoteMarker = `<sup><a href="javascript:void(0)" class="footnote-link text-blue-500 font-medium" data-footnote-id="${footnote.id}">[${footnoteNumber}]</a></sup>`
         processedText = processedText.replace(/<FN>.*?<\/FN>/, footnoteMarker)
       })
@@ -1272,6 +1440,7 @@ export function BibleReader({
           const footnoteId = footnote?.id || `fn-rf-${currentChapter}-${verse.verseNumber}-${i}`
           const before = processedText.substring(0, match.index)
           const after = processedText.substring(match.index + match[0].length)
+          // Use consistent blue color for footnote markers
           processedText =
             before +
             `<sup><a href="javascript:void(0)" class="footnote-link text-blue-500 font-medium" data-footnote-id="${footnoteId}">[${footnoteNumber}]</a></sup>` +
@@ -1288,20 +1457,66 @@ export function BibleReader({
     processedText = processedText.replace(/<i>(.*?)<\/i>/gi, "<em>$1</em>")
     processedText = processedText.replace(/<u>(.*?)<\/u>/gi, "<u>$1</u>")
 
-    return (
-      <div
-        key={verse.lineNumber}
-        className="verse mb-2"
-        style={{ marginBottom: `${displaySettings.paragraphSpacing}px` }}
-      >
-        {verse.sectionTitle && (
-          <h4 className="font-semibold text-lg mb-2" style={{ color: displaySettings.sectionTitleColor || "#3b82f6" }}>
-            {verse.sectionTitle}
-          </h4>
-        )}
-        <span dangerouslySetInnerHTML={{ __html: processedText }} />
-      </div>
-    )
+    // Create the verse container with appropriate styling
+    if (displaySettings.inlineVerses) {
+      // For inline verses, we'll use a span instead of a div
+      return (
+        <span
+          key={verse.lineNumber}
+          className="verse inline"
+          style={{
+            marginRight: "0.5em",
+          }}
+          dangerouslySetInnerHTML={{ __html: processedText }}
+        />
+      )
+    } else {
+      // For regular verses, use a div with proper indentation
+      return (
+        <div
+          key={verse.lineNumber}
+          className="verse mb-2"
+          style={{
+            marginBottom: `${displaySettings.paragraphSpacing}px`,
+          }}
+        >
+          {verse.sectionTitle && (
+            <h4
+              className="font-semibold text-lg mb-2"
+              style={{ color: displaySettings.sectionTitleColor || "#3b82f6" }}
+            >
+              {verse.sectionTitle}
+            </h4>
+          )}
+          {displaySettings.equalIndentation ? (
+            <div className="flex">
+              <div
+                className="verse-number-container"
+                style={{ minWidth: "2em", textAlign: "right", paddingRight: "0.5em" }}
+              >
+                <span
+                  className="verse-number"
+                  style={{
+                    color: displaySettings.verseNumberColor,
+                    fontSize: `${displaySettings.verseNumberSize}px`,
+                  }}
+                >
+                  {verse.verseNumber}
+                </span>
+              </div>
+              <div
+                className="verse-content"
+                dangerouslySetInnerHTML={{
+                  __html: processedText.replace(/<(span|sup) class="verse-number".*?<\/(span|sup)>\s*/, ""),
+                }}
+              />
+            </div>
+          ) : (
+            <span dangerouslySetInnerHTML={{ __html: processedText }} />
+          )}
+        </div>
+      )
+    }
   }
 
   useEffect(() => {
@@ -1396,7 +1611,13 @@ export function BibleReader({
             </Button>
           </div>
 
+          {/* Add Reading Plan Status here */}
+          {urlParams.book && <ReadingPlanStatus book={urlParams.book} chapter={currentChapter} />}
+
           <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={() => router.push("/reading-plan")} title="Reading Plans">
+              <BookOpen className="h-4 w-4" />
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowBookmarkDialog(true)} title="Bookmarks">
               <BookmarkPlus className="h-4 w-4" />
             </Button>
@@ -1410,7 +1631,20 @@ export function BibleReader({
               }}
               title="View All Footnotes"
             >
-              <BookOpen className="h-4 w-4" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M12 2 L12 22 M2 12 L22 12 M4.93 4.93 L19.07 19.07 M19.07 4.93 L4.93 19.07" />
+              </svg>
             </Button>
 
             <Button
@@ -1433,17 +1667,35 @@ export function BibleReader({
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
                   {footnotes.length > 0 ? (
-                    (currentFootnote ? [currentFootnote] : footnotes).map((footnote) => (
-                      <div key={footnote.id} id={footnote.id} className="pb-2 border-b last:border-0">
-                        <div className="flex items-start">
-                          <span className="font-bold mr-2">
-                            Verse {footnote.verseNumber}
-                            {footnote.number ? ` [${footnote.number}]` : ""}:
-                          </span>
-                          <div dangerouslySetInnerHTML={{ __html: footnote.content }} />
+                    (currentFootnote ? [currentFootnote] : footnotes).map((footnote) => {
+                      // Find the verse text for this footnote
+                      const verse = currentChapterData?.verses.find((v) => v.verseNumber === footnote.verseNumber)
+                      // Clean up verse text (remove tags)
+                      const verseText = verse ? cleanVerseText(verse.text) : ""
+
+                      return (
+                        <div key={footnote.id} id={footnote.id} className="pb-4 border-b last:border-0">
+                          {/* First line: Book and Chapter */}
+                          <div className="font-bold text-sm">
+                            {urlParams.book} - Chapter {currentChapter}
+                          </div>
+
+                          {/* Second line: Verse number and text */}
+                          <div className="my-1">
+                            <span className="font-semibold">Verse {footnote.verseNumber}: </span>
+                            <span>{verseText}</span>
+                          </div>
+
+                          {/* Third line: Footnote number and content */}
+                          <div className="mt-1 flex">
+                            <span className="font-medium mr-2 text-blue-500">
+                              {footnote.number ? `[${footnote.number}]` : "*"}
+                            </span>
+                            <div className="font-light" dangerouslySetInnerHTML={{ __html: footnote.content }} />
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      )
+                    })
                   ) : (
                     <p>No footnotes available for this chapter.</p>
                   )}
@@ -1516,7 +1768,11 @@ export function BibleReader({
                       </div>
                     ))
                   ) : (
-                    <div className="space-y-1">{currentChapterData.verses.map((verse) => renderVerse(verse))}</div>
+                    // Update the rendering of chapters to handle inline verses
+                    // Find the section where currentChapterData.verses.map is called and update it
+                    <div className={displaySettings.inlineVerses ? "inline-verses-container" : "space-y-1"}>
+                      {currentChapterData.verses.map((verse) => renderVerse(verse))}
+                    </div>
                   )}
                 </>
               )}
@@ -1568,8 +1824,6 @@ export function BibleReader({
         currentBook={urlParams.book || undefined}
         currentChapter={currentChapter}
         onNavigate={handleNavigateToBookmark}
-        defaultVersionId={displaySettings.defaultVersionId}
-        defaultOutlineId={displaySettings.defaultOutlineId}
       />
     </div>
   )

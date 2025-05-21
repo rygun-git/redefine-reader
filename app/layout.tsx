@@ -3,6 +3,8 @@ import type { Metadata } from "next"
 import { Montserrat } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { FontProvider } from "@/components/font-provider"
+import { AppInitializer } from "@/components/app-initializer"
 
 // Import Montserrat font
 const montserrat = Montserrat({
@@ -50,6 +52,9 @@ export default function RootLayout({
         {/* Add SBL Greek font alternative */}
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&display=swap" />
 
+        {/* Add Lora font */}
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&display=swap" />
+
         {/* PWA Meta Tags */}
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -64,9 +69,11 @@ export default function RootLayout({
         {/* Service Worker Registration */}
         <script src="/register-sw.js" defer></script>
       </head>
-      <body className={`${montserrat.variable} font-montserrat`}>
+      <body className={`${montserrat.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          {children}
+          <FontProvider>
+            <AppInitializer>{children}</AppInitializer>
+          </FontProvider>
         </ThemeProvider>
       </body>
     </html>

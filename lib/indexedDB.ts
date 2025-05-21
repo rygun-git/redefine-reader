@@ -1,13 +1,19 @@
+// Add these imports at the top of the file
+import type { ReadingPlan } from "./reading-plan"
+
 // IndexedDB utility functions for Bible Reader
 
 // Database configuration
 const DB_NAME = "BibleReaderDB"
-const DB_VERSION = 2 // Incremented from 1 to 2 to trigger database upgrade
+const DB_VERSION = 4 // Incremented from 3 to 4 to trigger database upgrade
 const BIBLE_STORE = "bibleContent"
 const SETTINGS_STORE = "settings"
 const LAST_READ_STORE = "lastRead"
 const BOOKMARKS_STORE = "bookmarks"
 const TAG_STYLES_STORE = "tagStyles" // Added store for tag styles
+const HISTORY_STORE = "history" // Added store for history
+// Add this constant with the other store constants
+const READING_PLANS_STORE = "readingPlans"
 
 // Check if IndexedDB is available and working
 export async function isIndexedDBAvailable(): Promise<boolean> {
@@ -112,6 +118,23 @@ export async function initDB(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(TAG_STYLES_STORE)) {
           console.log(`Creating object store: ${TAG_STYLES_STORE}`)
           db.createObjectStore(TAG_STYLES_STORE, { keyPath: "id" })
+        }
+
+        // Create history store with auto-incrementing ID
+        if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+          console.log(`Creating object store: ${HISTORY_STORE}`)
+          const historyStore = db.createObjectStore(HISTORY_STORE, {
+            keyPath: "id",
+            autoIncrement: true,
+          })
+          // Create an index for faster searches
+          historyStore.createIndex("timestamp", "timestamp", { unique: false })
+        }
+
+        // Create reading plans store
+        if (!db.objectStoreNames.contains(READING_PLANS_STORE)) {
+          console.log(`Creating object store: ${READING_PLANS_STORE}`)
+          db.createObjectStore(READING_PLANS_STORE, { keyPath: "id" })
         }
       }
     } catch (error) {
@@ -1113,5 +1136,310 @@ export async function importSettings(jsonData: string): Promise<{ success: boole
       success: false,
       message: "Failed to import settings: " + (error as Error).message,
     }
+  }
+}
+
+// Store a reading plan
+export async function storeReadingPlan(plan: ReadingPlan): Promise<void> {
+  try {
+    const db = await initDB()
+    if (!db) {
+      // Fallback to localStorage
+      const plans = getReadingPlansFromLocalStorage()
+      const existingPlanIndex = plans.findIndex((p) => p.id === plan.id)
+
+      if (existingPlanIndex >= 0) {
+        plans[existingPlanIndex] = plan
+      } else {
+        plans.push(plan)
+      }
+
+      saveReadingPlansToLocalStorage(plans)
+      return
+    }
+
+    return new Promise((resolve) => {
+      try {
+        // Check if the object store exists
+        if (!db.objectStoreNames.contains(READING_PLANS_STORE)) {
+          console.error(`Object store ${READING_PLANS_STORE} does not exist`)
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          const existingPlanIndex = plans.findIndex((p) => p.id === plan.id)
+
+          if (existingPlanIndex >= 0) {
+            plans[existingPlanIndex] = plan
+          } else {
+            plans.push(plan)
+          }
+
+          saveReadingPlansToLocalStorage(plans)
+          resolve()
+          return
+        }
+
+        const transaction = db.transaction([READING_PLANS_STORE], "readwrite")
+        const store = transaction.objectStore(READING_PLANS_STORE)
+
+        const request = store.put(plan)
+
+        request.onsuccess = () => {
+          resolve()
+        }
+
+        request.onerror = (event) => {
+          console.error("Error storing reading plan:", event)
+          console.error("Error details:", (event.target as IDBRequest).error)
+
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          const existingPlanIndex = plans.findIndex((p) => p.id === plan.id)
+
+          if (existingPlanIndex >= 0) {
+            plans[existingPlanIndex] = plan
+          } else {
+            plans.push(plan)
+          }
+
+          saveReadingPlansToLocalStorage(plans)
+          resolve()
+        }
+
+        transaction.oncomplete = () => {
+          db.close()
+        }
+      } catch (error) {
+        console.error("Transaction error:", error)
+
+        // Fallback to localStorage
+        const plans = getReadingPlansFromLocalStorage()
+        const existingPlanIndex = plans.findIndex((p) => p.id === plan.id)
+
+        if (existingPlanIndex >= 0) {
+          plans[existingPlanIndex] = plan
+        } else {
+          plans.push(plan)
+        }
+
+        saveReadingPlansToLocalStorage(plans)
+        resolve()
+      }
+    })
+  } catch (error) {
+    console.error("IndexedDB error:", error)
+
+    // Fallback to localStorage
+    const plans = getReadingPlansFromLocalStorage()
+    const existingPlanIndex = plans.findIndex((p) => p.id === plan.id)
+
+    if (existingPlanIndex >= 0) {
+      plans[existingPlanIndex] = plan
+    } else {
+      plans.push(plan)
+    }
+
+    saveReadingPlansToLocalStorage(plans)
+  }
+}
+
+// Get a reading plan by ID
+export async function getReadingPlan(id: string): Promise<ReadingPlan | null> {
+  try {
+    const db = await initDB()
+    if (!db) {
+      // Fallback to localStorage
+      const plans = getReadingPlansFromLocalStorage()
+      return plans.find((p) => p.id === id) || null
+    }
+
+    return new Promise((resolve) => {
+      try {
+        // Check if the object store exists
+        if (!db.objectStoreNames.contains(READING_PLANS_STORE)) {
+          console.error(`Object store ${READING_PLANS_STORE} does not exist`)
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          resolve(plans.find((p) => p.id === id) || null)
+          return
+        }
+
+        const transaction = db.transaction([READING_PLANS_STORE], "readonly")
+        const store = transaction.objectStore(READING_PLANS_STORE)
+
+        const request = store.get(id)
+
+        request.onsuccess = () => {
+          resolve(request.result || null)
+        }
+
+        request.onerror = (event) => {
+          console.error("Error retrieving reading plan:", event)
+          console.error("Error details:", (event.target as IDBRequest).error)
+
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          resolve(plans.find((p) => p.id === id) || null)
+        }
+
+        transaction.oncomplete = () => {
+          db.close()
+        }
+      } catch (error) {
+        console.error("Transaction error:", error)
+
+        // Fallback to localStorage
+        const plans = getReadingPlansFromLocalStorage()
+        resolve(plans.find((p) => p.id === id) || null)
+      }
+    })
+  } catch (error) {
+    console.error("IndexedDB error:", error)
+
+    // Fallback to localStorage
+    const plans = getReadingPlansFromLocalStorage()
+    return plans.find((p) => p.id === id) || null
+  }
+}
+
+// Get all reading plans
+export async function getAllReadingPlans(): Promise<ReadingPlan[]> {
+  try {
+    const db = await initDB()
+    if (!db) {
+      // Fallback to localStorage
+      return getReadingPlansFromLocalStorage()
+    }
+
+    return new Promise((resolve) => {
+      try {
+        // Check if the object store exists
+        if (!db.objectStoreNames.contains(READING_PLANS_STORE)) {
+          console.error(`Object store ${READING_PLANS_STORE} does not exist`)
+          // Fallback to localStorage
+          resolve(getReadingPlansFromLocalStorage())
+          return
+        }
+
+        const transaction = db.transaction([READING_PLANS_STORE], "readonly")
+        const store = transaction.objectStore(READING_PLANS_STORE)
+
+        const request = store.getAll()
+
+        request.onsuccess = () => {
+          resolve(request.result || [])
+        }
+
+        request.onerror = (event) => {
+          console.error("Error retrieving reading plans:", event)
+          console.error("Error details:", (event.target as IDBRequest).error)
+
+          // Fallback to localStorage
+          resolve(getReadingPlansFromLocalStorage())
+        }
+
+        transaction.oncomplete = () => {
+          db.close()
+        }
+      } catch (error) {
+        console.error("Transaction error:", error)
+
+        // Fallback to localStorage
+        resolve(getReadingPlansFromLocalStorage())
+      }
+    })
+  } catch (error) {
+    console.error("IndexedDB error:", error)
+
+    // Fallback to localStorage
+    return getReadingPlansFromLocalStorage()
+  }
+}
+
+// Delete a reading plan
+export async function deleteReadingPlan(id: string): Promise<boolean> {
+  try {
+    const db = await initDB()
+    if (!db) {
+      // Fallback to localStorage
+      const plans = getReadingPlansFromLocalStorage()
+      const updatedPlans = plans.filter((p) => p.id !== id)
+      saveReadingPlansToLocalStorage(updatedPlans)
+      return true
+    }
+
+    return new Promise((resolve) => {
+      try {
+        // Check if the object store exists
+        if (!db.objectStoreNames.contains(READING_PLANS_STORE)) {
+          console.error(`Object store ${READING_PLANS_STORE} does not exist`)
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          const updatedPlans = plans.filter((p) => p.id !== id)
+          saveReadingPlansToLocalStorage(updatedPlans)
+          resolve(true)
+          return
+        }
+
+        const transaction = db.transaction([READING_PLANS_STORE], "readwrite")
+        const store = transaction.objectStore(READING_PLANS_STORE)
+
+        const request = store.delete(id)
+
+        request.onsuccess = () => {
+          resolve(true)
+        }
+
+        request.onerror = (event) => {
+          console.error("Error deleting reading plan:", event)
+          console.error("Error details:", (event.target as IDBRequest).error)
+
+          // Fallback to localStorage
+          const plans = getReadingPlansFromLocalStorage()
+          const updatedPlans = plans.filter((p) => p.id !== id)
+          saveReadingPlansToLocalStorage(updatedPlans)
+          resolve(true)
+        }
+
+        transaction.oncomplete = () => {
+          db.close()
+        }
+      } catch (error) {
+        console.error("Transaction error:", error)
+
+        // Fallback to localStorage
+        const plans = getReadingPlansFromLocalStorage()
+        const updatedPlans = plans.filter((p) => p.id !== id)
+        saveReadingPlansToLocalStorage(updatedPlans)
+        resolve(true)
+      }
+    })
+  } catch (error) {
+    console.error("IndexedDB error:", error)
+
+    // Fallback to localStorage
+    const plans = getReadingPlansFromLocalStorage()
+    const updatedPlans = plans.filter((p) => p.id !== id)
+    saveReadingPlansToLocalStorage(updatedPlans)
+    return true
+  }
+}
+
+// Helper function to get reading plans from localStorage
+function getReadingPlansFromLocalStorage(): ReadingPlan[] {
+  try {
+    const plansStr = localStorage.getItem("bibleReaderReadingPlans")
+    return plansStr ? JSON.parse(plansStr) : []
+  } catch (e) {
+    console.error("Error reading reading plans from localStorage:", e)
+    return []
+  }
+}
+
+// Helper function to save reading plans to localStorage
+function saveReadingPlansToLocalStorage(plans: ReadingPlan[]): void {
+  try {
+    localStorage.setItem("bibleReaderReadingPlans", JSON.stringify(plans))
+  } catch (e) {
+    console.error("Error saving reading plans to localStorage:", e)
   }
 }

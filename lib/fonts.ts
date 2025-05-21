@@ -31,13 +31,14 @@ export const allFonts: FontDefinition[] = [
     description: "Modern sans-serif font (default)",
   },
   {
-    id: "times-new-roman",
-    name: "Times New Roman",
-    cssName: "'Times New Roman', serif",
+    id: "lora",
+    name: "Lora",
+    cssName: "'Lora', 'Georgia', serif",
     language: "english",
     isDefault: false,
-    description: "Classic serif font commonly used in Bible publications",
+    description: "Elegant serif font with good readability for long texts",
   },
+  
   {
     id: "georgia",
     name: "Georgia",

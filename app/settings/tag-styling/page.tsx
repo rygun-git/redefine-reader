@@ -125,6 +125,14 @@ export default function TagStylingPage() {
       cssClass: "block my-4",
       ignored: false,
     },
+    {
+      name: "Bible Link",
+      openTag: "<li>",
+      closeTag: "</li>",
+      description: "Internal link to Bible reference",
+      cssClass: "text-blue-600 underline cursor-pointer hover:text-blue-800",
+      ignored: false,
+    },
   ])
 
   const [newTag, setNewTag] = useState<TagStyle>({

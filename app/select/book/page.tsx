@@ -49,6 +49,7 @@ export default function BookSelectPage() {
   const [isListView, setIsListView] = useState(false)
   const [fetchingFromUrl, setFetchingFromUrl] = useState(false)
   const [debugInfo, setDebugInfo] = useState<string | null>(null)
+  const [outlineUrlParam, setOutlineUrlParam] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchBibleOutlines = async () => {
@@ -75,12 +76,13 @@ export default function BookSelectPage() {
         setDebugInfo(`Received data structure: ${JSON.stringify(Object.keys(outlineData))}`)
 
         let chapters: BibleOutline["chapters"] = []
-        const outlineUrlParam = outlineUrl
+        const outlineUrlParamValue = outlineUrl
+        setOutlineUrlParam(outlineUrlParamValue)
         const outline: BibleOutline = {
           id: Number(outlineParam) || 0,
           title: outlineData.title || "Outline from URL",
           chapters: [],
-          file_url: outlineUrlParam,
+          file_url: outlineUrlParamValue,
         }
         if (outlineData.categories && Array.isArray(outlineData.categories)) {
           // Track the order of categories as they appear in the file

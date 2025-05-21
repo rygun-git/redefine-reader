@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --reader-font: var(--font-montserrat), system-ui, sans-serif;
+  --app-font: var(--font-montserrat), system-ui, sans-serif;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -72,48 +77,39 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-montserrat), system-ui, sans-serif;
+    font-family: var(--app-font);
   }
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    font-family: var(--font-montserrat), system-ui, sans-serif;
+
+  /* Apply reader font to Bible content */
+  .bible-content {
+    font-family: var(--reader-font);
   }
 }
 
-/* Bible Reader Specific Styles */
-.comparison-view {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-top: 1rem;
+/* Verse highlight animation */
+@keyframes highlight-verse {
+  0% {
+    background-color: rgba(59, 130, 246, 0.2);
+  }
+  70% {
+    background-color: rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
-.comparison-panel {
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  padding: 1rem;
+.verse-highlight {
+  animation: highlight-verse 3s ease-out;
 }
 
-.selected-verse {
-  background-color: hsl(var(--accent));
-  border-radius: var(--radius);
-  padding: 0.5rem;
+/* Inline verses container styling */
+.inline-verses-container {
+  display: inline;
+  white-space: normal;
 }
 
-/* Font classes */
-.font-sbl-hebrew {
-  font-family: "Noto Serif Hebrew", "Noto Sans Hebrew", serif;
-}
-
-.font-sbl-greek {
-  font-family: "Noto Serif", serif;
-}
-
-/* RTL support for Hebrew */
-[dir="rtl"] {
-  text-align: right;
+.verse.inline {
+  display: inline;
+  margin-right: 0.5em;
 }

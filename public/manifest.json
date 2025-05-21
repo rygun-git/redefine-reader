@@ -1,6 +1,6 @@
 {
   "name": "Redefine Bible Reader",
-  "short_name": "Bible Reader",
+  "short_name": "Redefine",
   "description": "A modern Bible reader application with multiple versions and study tools",
   "start_url": "/",
   "display": "standalone",
