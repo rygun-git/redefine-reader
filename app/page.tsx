@@ -121,7 +121,7 @@ export default function HomePage() {
           </Card>
         </Link>
 
-        <Link href="/admin" className="block">
+        {/* <Link href="/admin" className="block">
           <Card className="h-full transition-all hover:shadow-md">
             <CardHeader>
               <div className="w-12 h-12 flex items-center justify-center rounded-full bg-purple-100 mb-2">
@@ -139,7 +139,10 @@ export default function HomePage() {
               <Button className="w-full bg-purple-600 hover:bg-purple-700">Admin Dashboard</Button>
             </CardFooter>
           </Card>
-        </Link>
+        </Link> */}
+
+
+
       </div> 
 
       {/* Bookmarks Section */}
