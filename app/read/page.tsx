@@ -40,6 +40,13 @@ interface BibleOutline {
 
 const HARDCODED_VERSIONS: BibleVersion[] = [
   {
+    id: 3,
+    title: "LLV 352 (DEVELOPMENT TEST)",
+    language: "English",
+    description: "Lawful Literal Version, Accountable Brothers' Standard Version of 2019-2025",
+  },
+
+  {
     id: 2,
     title: "LLV 352",
     language: "English",

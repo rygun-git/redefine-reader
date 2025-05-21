@@ -69,7 +69,7 @@ export default function ReadViewPage() {
           <h1 className="text-2xl font-bold">Bible Reader</h1>
           <Link href="/read">
             <Button variant="outline" size="sm">
-              <Home className="h-4 w-4 mr-2" /> Back to Home
+              <Home className="h-4 w-4 mr-2" />
             </Button>
           </Link>
         </div>
@@ -114,7 +114,7 @@ export default function ReadViewPage() {
   }
 
   // Fallback URLs in case the resolver fails
-  const fallbackVersionUrl = "/bibles/2.txt"
+  const fallbackVersionUrl = "/bibles/3.txt"
   const fallbackOutlineUrl = "/outlines/11.json"
 
   return (
