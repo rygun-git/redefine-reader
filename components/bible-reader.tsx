@@ -1475,8 +1475,8 @@ export function BibleReader({
       )}
 
       <Card
-        className="border-none p-4 sm:p-4 sm:mx-0 w-full max-w-full rounded-none sm:rounded-md mx-auto"
-        style={{ marginTop: "0px", paddingRight: "5px" }}
+        className="border-none p-2 sm:p-4 sm:mx-0 w-full max-w-full rounded-none sm:rounded-md mx-auto"
+        style={{ marginTop: "4px", paddingRight: "5px" }}
       >
         <div
           ref={contentRef}
