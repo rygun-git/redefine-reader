@@ -293,7 +293,7 @@ export default function ChapterSelectPage() {
                           {chapter.sections
                             .sort((a, b) => a.startLine - b.startLine)
                             .map((section, index) => (
-                              <li key={index} className="text-sm pl-2 border-l-2 border-primary/20">
+                              <li key={index} className="text-sm pl-2 border-l-2 border-primary/20 text-muted-foregroun">
                                 {section.title}
                               </li>
                             ))}
