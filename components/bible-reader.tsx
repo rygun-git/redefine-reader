@@ -807,17 +807,14 @@ export function BibleReader({
 
       const lines = content.split("\n")
       const verses: { text: string; lineNumber: number; verseNumber: number }[] = []
-      let currentVerseNumber = 1
 
       console.log("Parsing verses from content...")
       lines.forEach((line, index) => {
         if (line.trim()) {
-          const verseMatch = line.match(/<V>(\d+)<\/V>/)
-          const verseNumber = verseMatch ? Number.parseInt(verseMatch[1], 10) : currentVerseNumber++
           verses.push({
             text: line,
             lineNumber: index + 1,
-            verseNumber,
+            verseNumber: 0, // This will be set properly for each chapter later
           })
         }
       })
@@ -852,12 +849,26 @@ export function BibleReader({
         const startLine = (Number(chapter.startLine) || 1) - minLine + 1
         const endLine = (Number(chapter.endLine) || verses.length) - minLine + 1
 
+        // Reset verse number for each chapter
+        let chapterVerseNumber = 1
+
         if (startLine > endLine || startLine < 1 || endLine > verses.length) {
           console.warn("Invalid chapter bounds:", { chapterNumber, startLine, endLine, totalVerses: verses.length })
           return
         }
 
-        const chapterVerses = verses.filter((verse) => verse.lineNumber >= startLine && verse.lineNumber <= endLine)
+        const chapterVerses = verses
+          .filter((verse) => verse.lineNumber >= startLine && verse.lineNumber <= endLine)
+          .map((verse) => {
+            // If verse has explicit number, use it, otherwise use incremented counter
+            const verseMatch = verse.text.match(/<V>(\d+)<\/V>/)
+            const verseNumber = verseMatch ? Number.parseInt(verseMatch[1], 10) : chapterVerseNumber++
+
+            return {
+              ...verse,
+              verseNumber,
+            }
+          })
 
         console.log(`Chapter ${chapterNumber} verses:`, chapterVerses.length)
 
