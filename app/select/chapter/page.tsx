@@ -286,7 +286,7 @@ export default function ChapterSelectPage() {
 
                     {showSections && chapter.sections && chapter.sections.length > 0 && (
                       <div
-                        className="p-3 rounded-b-md cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="p-3 rounded-b-md cursor-pointer transition-colors"
                         onClick={() => handleChapterSelect(chapter.number)}
                       >
                         <ul className="space-y-1">
