@@ -258,7 +258,7 @@ export default function ChapterSelectPage() {
                   <Card key={chapter.number} className="overflow-hidden">
                     <div
                       onClick={() => handleChapterSelect(chapter.number)}
-                      className="w-full h-auto py-3 px-4 flex items-center justify-between bg-white hover:bg-gray-50 cursor-pointer border-b rounded-b-none transition-colors"
+                      className="w-full h-auto py-3 px-4 flex items-center justify-between hover:bg-white-50 cursor-pointer border-b rounded-b-none transition-colors"
                     >
                       <div className="flex flex-col items-start">
                         <div className="font-bold text-lg text-gray-800">Chapter {chapter.number}</div>
