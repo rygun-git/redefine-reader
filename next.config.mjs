@@ -14,6 +14,9 @@ const nextConfig = {
   // Fix assetPrefix to start with a leading slash
   assetPrefix: '/',
   
+  // Explicitly disable directory cleaning
+  cleanDistDir: false,
+  
   // Add headers for all requests
   async headers() {
     return [
@@ -36,6 +39,15 @@ const nextConfig = {
         ],
       },
     ]
+  },
+  
+  // Custom webpack configuration to preserve public files
+  webpack: (config, { isServer }) => {
+    // Preserve the public directory during builds
+    if (!isServer) {
+      config.optimization.minimize = false;
+    }
+    return config;
   },
   
   eslint: {

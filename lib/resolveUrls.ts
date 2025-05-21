@@ -17,12 +17,12 @@ export async function resolveUrls(
 
   // Resolve version URL
   if (versionId) {
-    versionUrl = `https://llvbible.com/bibles/${versionId}.txt`
+    versionUrl = `/bibles/${versionId}.txt`
   }
 
   // Resolve outline URL
   if (outlineId) {
-    outlineUrl = `https://llvbible.com/outlines/${outlineId}.json`
+    outlineUrl = `/outlines/${outlineId}.json`
   }
 
   console.log("BibleUrl", versionUrl)
