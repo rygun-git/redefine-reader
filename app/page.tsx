@@ -121,7 +121,26 @@ export default function HomePage() {
           </Card>
         </Link>
 
-
+        <Link href="/admin" className="block">
+          <Card className="h-full transition-all hover:shadow-md">
+            <CardHeader>
+              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-purple-100 mb-2">
+                <Settings className="h-6 w-6 text-purple-600" />
+              </div>
+              <CardTitle>Admin Dashboard</CardTitle>
+              <CardDescription>Manage Bible versions and outlines</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-grow">
+              <p className="text-sm text-muted-foreground">
+                Upload new Bible versions, create outlines, and manage your Bible library settings.
+              </p>
+            </CardContent>
+            <CardFooter>
+              <Button className="w-full bg-purple-600 hover:bg-purple-700">Admin Dashboard</Button>
+            </CardFooter>
+          </Card>
+        </Link>
+      </div> 
 
       {/* Bookmarks Section */}
       <div className="mt-12">
