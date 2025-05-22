@@ -365,7 +365,7 @@ export default function ReadViewPage() {
                   </>
                 ) : (
                   <>
-                    {versionTitle || versionParam} • {outlineTitle || outlineParam}
+                    {versionTitle || versionParam}{/* • {outlineTitle || outlineParam}*/}
                     <ChevronDown className="h-3.5 w-3.5 ml-1" />
                   </>
                 )}
@@ -374,7 +374,7 @@ export default function ReadViewPage() {
                 href={`/about/version?version=${versionParam}&outline=${outlineParam}&book=${bookParam}&chapter=${chapterParam}`}
                 className="inline-flex items-center bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
               >
-                About
+                {/*About*/}
                 <Info className="h-3.5 w-3.5 ml-1" />
               </Link>
             </p>

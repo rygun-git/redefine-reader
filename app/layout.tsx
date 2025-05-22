@@ -66,6 +66,10 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#3b82f6" />
         <meta name="msapplication-tap-highlight" content="no" />
 
+        {/* Theme color meta tags for light/dark mode */}
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+
         {/* Service Worker Registration */}
         <script src="/register-sw.js" defer></script>
       </head>

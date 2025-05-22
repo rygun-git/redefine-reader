@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { ReadingPlan } from "@/lib/reading-plan"
 import { getAllReadingPlans, storeReadingPlan } from "@/lib/indexedDB"
 import { markChapterCompleted } from "@/lib/reading-plan"
+import { Fireworks } from "@/components/fireworks"
 
 interface ReadingPlanStatusProps {
   book: string
@@ -14,9 +15,21 @@ interface ReadingPlanStatusProps {
 }
 
 export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
+  // Add padding at the bottom of the page to prevent content from being hidden behind the footer
+  useEffect(() => {
+    // Add padding to the bottom of the page
+    document.body.style.paddingBottom = "60px"
+
+    // Clean up when component unmounts
+    return () => {
+      document.body.style.paddingBottom = ""
+    }
+  }, [])
+
   const [readingPlans, setReadingPlans] = useState<ReadingPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showFireworks, setShowFireworks] = useState(false)
 
   // Load reading plans
   useEffect(() => {
@@ -61,6 +74,14 @@ export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
       const updatedPlans = [...readingPlans]
       updatedPlans[planIndex] = updatedPlan
       setReadingPlans(updatedPlans)
+
+      // Show fireworks if marking as complete
+      if (completed) {
+        setShowFireworks(true)
+        setTimeout(() => {
+          setShowFireworks(false)
+        }, 3000) // Show fireworks for 3 seconds
+      }
     } catch (err) {
       console.error("Error updating chapter completion:", err)
       setError("Failed to update reading plan")
@@ -85,31 +106,42 @@ export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
   }
 
   return (
-    <div className="flex flex-wrap gap-2 mt-2">
-      {matchingChapters.map(({ plan, chapter, chapterIndex }) => (
-        <TooltipProvider key={`${plan.id}-${chapterIndex}`}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={chapter.completed ? "default" : "outline"}
-                size="sm"
-                className={chapter.completed ? "bg-green-600 hover:bg-green-700" : ""}
-                onClick={() => handleToggleCompletion(plan.id, chapterIndex, !chapter.completed)}
-              >
-                {chapter.completed ? <Check className="h-4 w-4 mr-1" /> : null}
-                {plan.name}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>
-                {chapter.completed
-                  ? `Completed in "${plan.name}" reading plan`
-                  : `Mark as completed in "${plan.name}" reading plan`}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ))}
-    </div>
+    <>
+      {showFireworks && <Fireworks />}
+      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border p-2 flex flex-wrap gap-2 justify-center z-10">
+        {matchingChapters.map(({ plan, chapter, chapterIndex }) => (
+          <TooltipProvider key={`${plan.id}-${chapterIndex}`}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={chapter.completed ? "border-green-600" : ""}
+                  onClick={() => handleToggleCompletion(plan.id, chapterIndex, !chapter.completed)}
+                >
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full w-5 h-5 mr-1.5 ${
+                      chapter.completed ? "bg-green-600" : "bg-gray-200 dark:bg-gray-700"
+                    }`}
+                  >
+                    <Check
+                      className={`h-3 w-3 ${chapter.completed ? "text-white" : "text-gray-500 dark:text-gray-400"}`}
+                    />
+                  </span>
+                  {plan.name}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  {chapter.completed
+                    ? `Completed in "${plan.name}" reading plan`
+                    : `Mark as completed in "${plan.name}" reading plan`}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ))}
+      </div>
+    </>
   )
 }

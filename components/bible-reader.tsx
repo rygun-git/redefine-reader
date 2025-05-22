@@ -1589,7 +1589,7 @@ export function BibleReader({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <select
-              className="h-9 w-[80px] text-center rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-9 w-[60px] text-center rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={currentChapter}
               onChange={(e) => handleChapterChange(Number(e.target.value))}
             >

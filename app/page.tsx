@@ -1,11 +1,13 @@
 "use client"
 
+import type React from "react"
+
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookOpen, BookmarkIcon, Info, Clock } from "lucide-react"
+import { BookOpen, BookmarkIcon, Info, Clock, Eye, EyeOff } from "lucide-react"
 import { getAllBookmarks, type Bookmark } from "@/lib/bookmarks"
 import { getDisplaySettings, getAllReadingPlans } from "@/lib/indexedDB"
 // Add the import for history
@@ -29,6 +31,9 @@ export default function HomePage() {
   // Version selection state
   const [showVersionModal, setShowVersionModal] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<{ book: string; chapter: number } | null>(null)
+
+  // Add a new state to track hidden completed chapters
+  const [hideCompletedChapters, setHideCompletedChapters] = useState<Record<string, boolean>>({})
 
   // Load bookmarks and default settings
   useEffect(() => {
@@ -74,6 +79,17 @@ export default function HomePage() {
 
     loadData()
   }, [])
+
+  // Initialize all plans to hide completed chapters by default when reading plans are loaded
+  useEffect(() => {
+    if (readingPlans.length > 0) {
+      const initialHideState: Record<string, boolean> = {}
+      readingPlans.forEach((plan) => {
+        initialHideState[plan.id] = true // Default to hiding completed chapters
+      })
+      setHideCompletedChapters(initialHideState)
+    }
+  }, [readingPlans])
 
   // Navigate to a bookmarked chapter
   const navigateToBookmark = (bookmark: Bookmark) => {
@@ -156,6 +172,15 @@ export default function HomePage() {
       console.error("Error parsing sections:", error)
       return []
     }
+  }
+
+  // Add a function to toggle showing/hiding completed chapters
+  const toggleHideCompleted = (planId: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    setHideCompletedChapters((prev) => ({
+      ...prev,
+      [planId]: !prev[planId],
+    }))
   }
 
   return (
@@ -371,6 +396,23 @@ export default function HomePage() {
                           <div className="mt-2 text-sm text-muted-foreground">
                             {progress.completedChapters} of {progress.totalChapters} chapters completed
                           </div>
+                          <div className="mt-2 flex justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => toggleHideCompleted(plan.id, e)}
+                            >
+                              {hideCompletedChapters[plan.id] ? (
+                                <Eye className="h-4 w-4" />
+                              ) : (
+                                <EyeOff className="h-4 w-4" />
+                              )}
+                              <span className="sr-only">
+                                {hideCompletedChapters[plan.id] ? "Show completed" : "Hide completed"}
+                              </span>
+                            </Button>
+                          </div>
                         </div>
                       )}
 
@@ -378,26 +420,42 @@ export default function HomePage() {
 
                       {hasChapters && (
                         <div className="mt-4 grid grid-cols-2 gap-2">
-                          {plan.chapters.slice(0, 4).map((chapter) => (
-                            <Button
-                              key={`${chapter.book}-${chapter.chapter}`}
-                              variant="outline"
-                              size="sm"
-                              className={chapter.completed ? "bg-green-50" : ""}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                navigateToChapter(chapter.book, chapter.chapter)
-                              }}
-                            >
-                              {chapter.book} {chapter.chapter}
-                            </Button>
-                          ))}
-                          {plan.chapters.length > 4 && (
+                          {plan.chapters
+                            .filter((chapter) => !hideCompletedChapters[plan.id] || !chapter.completed)
+                            .slice(0, 4)
+                            .map((chapter) => (
+                              <Button
+                                key={`${chapter.book}-${chapter.chapter}`}
+                                variant="outline"
+                                size="sm"
+                                className={chapter.completed ? "bg-green-50" : ""}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigateToChapter(chapter.book, chapter.chapter)
+                                }}
+                              >
+                                {chapter.book} {chapter.chapter}
+                              </Button>
+                            ))}
+                          {plan.chapters.filter((chapter) => !hideCompletedChapters[plan.id] || !chapter.completed)
+                            .length > 4 && (
                             <Link href={`/reading-plan?id=${plan.id}`} className="col-span-2 text-center">
                               <Button variant="link" size="sm">
-                                View all {plan.chapters.length} chapters
+                                View all{" "}
+                                {
+                                  plan.chapters.filter(
+                                    (chapter) => !hideCompletedChapters[plan.id] || !chapter.completed,
+                                  ).length
+                                }{" "}
+                                chapters
                               </Button>
                             </Link>
+                          )}
+                          {plan.chapters.filter((chapter) => !hideCompletedChapters[plan.id] || !chapter.completed)
+                            .length === 0 && (
+                            <div className="col-span-2 text-center text-sm text-muted-foreground py-2">
+                              All chapters completed
+                            </div>
                           )}
                         </div>
                       )}
