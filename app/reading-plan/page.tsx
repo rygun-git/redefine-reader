@@ -81,7 +81,7 @@ export default function ReadingPlanPage() {
 
   // View states
   const [compactView, setCompactView] = useState(false)
-  const [concertinaView, setConcertinaView] = useState(true)
+  const [concertinaView, setConcertinaView] = useState(false)
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
 
   const [readingPlans, setReadingPlans] = useState<ReadingPlan[]>([])
@@ -140,6 +140,12 @@ export default function ReadingPlanPage() {
           }
         }
 
+        // If no outline ID is set yet, default to "11"
+        if (!outlineId && !settings?.defaultOutlineId) {
+          setOutlineId("11")
+          setDefaultOutlineId("11")
+        }
+
         // Load reading plans
         const plans = await getAllReadingPlans()
         setReadingPlans(plans)
@@ -171,7 +177,7 @@ export default function ReadingPlanPage() {
     }
 
     loadData()
-  }, [planId])
+  }, [planId, outlineId])
 
   // Load Bible structure from outline
   useEffect(() => {
@@ -899,11 +905,11 @@ export default function ReadingPlanPage() {
             <h3 className="font-medium">Overall Bible Progress</h3>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-muted-foreground">Compact View</span>
+                <span className="text-sm text-muted-foreground">Compact</span>
                 <Switch checked={compactView} onCheckedChange={setCompactView} aria-label="Toggle compact view" />
               </div>
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-muted-foreground">Concertina View</span>
+                <span className="text-sm text-muted-foreground">Concertina</span>
                 <Switch
                   checked={concertinaView}
                   onCheckedChange={setConcertinaView}
@@ -953,7 +959,17 @@ export default function ReadingPlanPage() {
         ) : bibleCategories.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-4">No Bible structure available.</p>
-            {!outlineId && <Button onClick={() => setShowVersionModal(true)}>Select Bible Version and Outline</Button>}
+            {!outlineId && (
+              <Button
+                onClick={() => {
+                  setOutlineId("11")
+                  // Also update the default outline ID for consistency
+                  setDefaultOutlineId("11")
+                }}
+              >
+                Load Bible Structure
+              </Button>
+            )}
           </div>
         ) : (
           bibleCategories.map(renderCategory)

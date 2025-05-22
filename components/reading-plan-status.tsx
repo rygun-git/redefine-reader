@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { ReadingPlan } from "@/lib/reading-plan"
 import { getAllReadingPlans, storeReadingPlan } from "@/lib/indexedDB"
 import { markChapterCompleted } from "@/lib/reading-plan"
-import { Fireworks } from "@/components/fireworks"
+import { Celebration } from "@/components/celebration"
 
 interface ReadingPlanStatusProps {
   book: string
@@ -29,7 +29,7 @@ export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
   const [readingPlans, setReadingPlans] = useState<ReadingPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showFireworks, setShowFireworks] = useState(false)
+  const [showCelebration, setShowCelebration] = useState(false)
 
   // Load reading plans
   useEffect(() => {
@@ -75,12 +75,12 @@ export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
       updatedPlans[planIndex] = updatedPlan
       setReadingPlans(updatedPlans)
 
-      // Show fireworks if marking as complete
+      // Show celebration if marking as complete
       if (completed) {
-        setShowFireworks(true)
+        setShowCelebration(true)
         setTimeout(() => {
-          setShowFireworks(false)
-        }, 3000) // Show fireworks for 3 seconds
+          setShowCelebration(false)
+        }, 3000) // Show celebration for 3 seconds
       }
     } catch (err) {
       console.error("Error updating chapter completion:", err)
@@ -107,8 +107,8 @@ export function ReadingPlanStatus({ book, chapter }: ReadingPlanStatusProps) {
 
   return (
     <>
-      {showFireworks && <Fireworks />}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border p-2 flex flex-wrap gap-2 justify-center z-10">
+      {showCelebration && <Celebration />}
+      <div className="fixed bottom-5 left-0 right-0 bg-background border-t border-border p-2 flex flex-wrap gap-2 justify-center z-10">
         {matchingChapters.map(({ plan, chapter, chapterIndex }) => (
           <TooltipProvider key={`${plan.id}-${chapterIndex}`}>
             <Tooltip>
